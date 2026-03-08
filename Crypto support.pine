@@ -1,0 +1,709 @@
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  CRYPTO INSTITUTIONAL FLOW v2  —  BINANCE  (Pine Script v5)     ║
+// ║  Tuned: ETH/BTC/Alts · Day Trading 15M–1H · Intermediate        ║
+// ║  overlay=true | Non-Repainting                                   ║
+// ║  + Auto Pair Detection · BTC Correlation · Spot/Futures Mode     ║
+// ║  + 1H/15M Dual Gate · Session Priority · Trailing Stop           ║
+// ║  FIX: var table hoisted to top-level — no more dashboard dismount ║
+// ╚══════════════════════════════════════════════════════════════════╝
+//@version=5
+indicator("Crypto Institutional Flow v2 [Binance]", shorttitle="CIF·v2", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=400)
+
+// ════════════════════════════════════════════════════════════
+//  INPUTS
+// ════════════════════════════════════════════════════════════
+grpMode  = "── Pair / Market Mode ──"
+isAlt      = input.bool(false, "Altcoin Mode (wider SL/Vol)", group=grpMode, tooltip="Enable for SOL, BNB, DOGE etc. Disable for BTC/ETH. Or leave off and use Auto-Detect.")
+autoDetect = input.bool(true,  "Auto-Detect Pair Type",       group=grpMode, tooltip="Automatically widens rules for alts. Overrides manual Altcoin Mode above.")
+spotMode   = input.bool(false, "Spot Mode (Long-only)",        group=grpMode, tooltip="Suppresses all SHORT signals. Use if trading spot wallet only.")
+btcFilter  = input.bool(true,  "BTC Correlation Filter",       group=grpMode, tooltip="Blocks alt LONG signals when BTC 1H trend is bearish. Highly recommended.")
+
+grpMTF   = "── Timeframes ──"
+tf_trend = input.timeframe("D",   "Trend TF (1D)",  group=grpMTF)
+tf_trade = input.timeframe("60",  "Trade TF (1H)",  group=grpMTF)
+
+grpVol   = "── Volume ──"
+volLen     = input.int(20,    "Volume MA Length",         minval=5,  group=grpVol)
+volMultBtc = input.float(2.0, "Vol Spike — BTC/ETH",      step=0.1,  group=grpVol)
+volMultAlt = input.float(2.5, "Vol Spike — Alts",          step=0.1,  group=grpVol)
+
+grpLiq   = "── Liquidity ──"
+swingLen  = input.int(10, "Swing Pivot Length", minval=3,  group=grpLiq)
+liqLookbk = input.int(50, "Liquidity Lookback", minval=20, group=grpLiq)
+
+grpOB    = "── Order Blocks ──"
+obStrength = input.float(1.5, "OB Vol Strength", step=0.1, group=grpOB)
+
+grpSig   = "── Signal Quality ──"
+minScoreBtc = input.int(4, "Min Score — BTC/ETH (3–8)", minval=3, maxval=8, group=grpSig)
+minScoreAlt = input.int(5, "Min Score — Alts (3–8)",    minval=3, maxval=8, group=grpSig, tooltip="Alts need higher confirmation to filter noisy signals")
+
+grpRM    = "── Risk Management ──"
+rrRatio         = input.float(2.0, "R:R Ratio",                    step=0.5, group=grpRM)
+atrLen          = input.int(14,    "ATR Length",                    minval=5, group=grpRM)
+slMultBtc       = input.float(1.5, "SL ATR Mult — BTC/ETH",         step=0.1, group=grpRM)
+slMultAlt       = input.float(2.0, "SL ATR Mult — Alts",             step=0.1, group=grpRM)
+trailActivation = input.float(0.8, "Trail Activate (ATR mult)",      step=0.1, group=grpRM, tooltip="Day trading: 0.8 ATR activates trail quickly to lock profit early")
+trailAtrMult    = input.float(0.7, "Trail Distance (ATR mult)",       step=0.1, group=grpRM, tooltip="Day trading: 0.7 ATR keeps trail tight for faster exits")
+
+grpSess  = "── Sessions (UTC) ──"
+showSess = input.bool(true, "Show Session Backgrounds", group=grpSess)
+tzSess   = input.string("UTC", "Timezone", group=grpSess)
+
+grpVis   = "── Display ──"
+showVWAP  = input.bool(true,  "Show VWAP + Bands",     group=grpVis)
+showAVWAP = input.bool(true,  "Show Anchored VWAP",    group=grpVis)
+showOB    = input.bool(true,  "Show Order Blocks",     group=grpVis)
+showFVG   = input.bool(true,  "Show Fair Value Gaps",  group=grpVis)
+showLiq   = input.bool(true,  "Show Liquidity",        group=grpVis)
+showSwing = input.bool(true,  "Show Swing Levels",     group=grpVis)
+showMS    = input.bool(true,  "Show BOS / CHoCH",      group=grpVis)
+showDisp  = input.bool(true,  "Show Displacement",     group=grpVis)
+showDash  = input.bool(true,  "Show Dashboard",        group=grpVis)
+showTPSL  = input.bool(true,  "Show TP / SL Lines",    group=grpVis)
+showTrail = input.bool(true,  "Show Trailing Stop",    group=grpVis)
+showLvlBox= input.bool(true,  "Show Levels Box",       group=grpVis)
+
+// ════════════════════════════════════════════════════════════
+//  AUTO PAIR DETECTION
+// ════════════════════════════════════════════════════════════
+isMajor   = str.contains(syminfo.basecurrency, "BTC") or str.contains(syminfo.basecurrency, "ETH")
+isAltcoin = autoDetect ? not isMajor : isAlt
+volMult   = isAltcoin ? volMultAlt : volMultBtc
+slMult    = isAltcoin ? slMultAlt  : slMultBtc
+minScore  = isAltcoin ? minScoreAlt : minScoreBtc
+pairLabel = isAltcoin ? "ALT" : "MAJOR"
+
+// ════════════════════════════════════════════════════════════
+//  COLOURS
+// ════════════════════════════════════════════════════════════
+C_BULL  = #00e676
+C_BEAR  = #ff1744
+C_GOLD  = #ffd600
+C_VWAP  = #29b6f6
+C_WHITE = #e0e0e0
+C_GRAY  = #546e7a
+C_OB_B  = color.new(#1565c0, 75)
+C_OB_S  = color.new(#b71c1c, 75)
+C_FVG_B = color.new(#00e676, 90)
+C_FVG_S = color.new(#ff1744, 90)
+C_TRAIL = #ff9800
+C_BOS   = #ab47bc
+C_CHOCH = #ef5350
+C_ASIA  = color.new(#ffd600, 95)
+C_LDN   = color.new(#1565c0, 93)
+C_NY    = color.new(#006064, 91)
+
+// ════════════════════════════════════════════════════════════
+//  HTF — confirmed bars, no lookahead
+// ════════════════════════════════════════════════════════════
+f_htf(tf, src) => request.security(syminfo.tickerid, tf, src[1], lookahead=barmerge.lookahead_off)
+
+// ════════════════════════════════════════════════════════════
+//  BTC CORRELATION FILTER
+// ════════════════════════════════════════════════════════════
+btc_close  = request.security("BINANCE:BTCUSDT", "60", close[1],             lookahead=barmerge.lookahead_off)
+btc_ema21  = request.security("BINANCE:BTCUSDT", "60", ta.ema(close, 21)[1], lookahead=barmerge.lookahead_off)
+btc_ema50  = request.security("BINANCE:BTCUSDT", "60", ta.ema(close, 50)[1], lookahead=barmerge.lookahead_off)
+btc_bullH1 = btc_close > btc_ema21 and btc_ema21 > btc_ema50
+btc_bearH1 = btc_close < btc_ema21 and btc_ema21 < btc_ema50
+
+btcGateLong  = not btcFilter or isMajor or btc_bullH1
+btcGateShort = not btcFilter or isMajor or btc_bearH1
+
+// ════════════════════════════════════════════════════════════
+//  1D TREND
+// ════════════════════════════════════════════════════════════
+d1_close  = f_htf(tf_trend, close)
+d1_high   = f_htf(tf_trend, high)
+d1_low    = f_htf(tf_trend, low)
+d1_ema20  = f_htf(tf_trend, ta.ema(close, 20))
+d1_ema50  = f_htf(tf_trend, ta.ema(close, 50))
+d1_ema200 = f_htf(tf_trend, ta.ema(close, 200))
+d1_vwap   = f_htf(tf_trend, ta.vwap(hlc3))
+d1_bull   = d1_close > d1_ema20 and d1_ema20 > d1_ema50 and d1_ema50 > d1_ema200
+d1_bear   = d1_close < d1_ema20 and d1_ema20 < d1_ema50 and d1_ema50 < d1_ema200
+d1_HH     = d1_high > d1_high[1] and d1_high[1] > d1_high[2]
+d1_LL     = d1_low  < d1_low[1]  and d1_low[1]  < d1_low[2]
+d1_uptrend   = d1_bull and d1_HH and d1_close > d1_vwap
+d1_downtrend = d1_bear and d1_LL and d1_close < d1_vwap
+
+// ════════════════════════════════════════════════════════════
+//  1H TRADE STRUCTURE
+// ════════════════════════════════════════════════════════════
+h1_close = f_htf(tf_trade, close)
+h1_open  = f_htf(tf_trade, open)
+h1_high  = f_htf(tf_trade, high)
+h1_low   = f_htf(tf_trade, low)
+h1_vol   = f_htf(tf_trade, volume)
+h1_volMA = f_htf(tf_trade, ta.sma(volume, volLen))
+h1_ema9  = f_htf(tf_trade, ta.ema(close, 9))
+h1_ema21 = f_htf(tf_trade, ta.ema(close, 21))
+h1_ema50 = f_htf(tf_trade, ta.ema(close, 50))
+h1_rsi   = f_htf(tf_trade, ta.rsi(close, 14))
+h1_vwap  = f_htf(tf_trade, ta.vwap(hlc3))
+
+h1_range   = math.max(h1_high - h1_low, 0.0001)
+h1_bullBar = h1_close > h1_open and (h1_close - h1_low) / h1_range > 0.60 and h1_vol > h1_volMA
+h1_bearBar = h1_close < h1_open and (h1_high - h1_close) / h1_range > 0.60 and h1_vol > h1_volMA
+h1_emaUp   = h1_ema9 > h1_ema21 and h1_ema21 > h1_ema50 and h1_close > h1_vwap
+h1_emaDn   = h1_ema9 < h1_ema21 and h1_ema21 < h1_ema50 and h1_close < h1_vwap
+h1_momUp   = h1_rsi > 50 and h1_rsi < 80
+h1_momDn   = h1_rsi < 50 and h1_rsi > 20
+
+// ════════════════════════════════════════════════════════════
+//  SESSION VWAP + BANDS
+// ════════════════════════════════════════════════════════════
+vwap15  = ta.vwap(hlc3)
+vwapDev = math.sqrt(ta.sma(math.pow(hlc3 - vwap15, 2), 20))
+vwapU1  = vwap15 + vwapDev
+vwapL1  = vwap15 - vwapDev
+vwapU2  = vwap15 + vwapDev * 2
+vwapL2  = vwap15 - vwapDev * 2
+vwapU3  = vwap15 + vwapDev * 3
+vwapL3  = vwap15 - vwapDev * 3
+
+plot(showVWAP ? vwap15 : na, "VWAP",     color=C_VWAP,                linewidth=2)
+plot(showVWAP ? vwapU1 : na, "VWAP +1s", color=color.new(C_VWAP, 55), linewidth=1)
+plot(showVWAP ? vwapL1 : na, "VWAP -1s", color=color.new(C_VWAP, 55), linewidth=1)
+plot(showVWAP ? vwapU2 : na, "VWAP +2s", color=color.new(C_VWAP, 72), linewidth=1)
+plot(showVWAP ? vwapL2 : na, "VWAP -2s", color=color.new(C_VWAP, 72), linewidth=1)
+plot(showVWAP ? vwapU3 : na, "VWAP +3s", color=color.new(C_VWAP, 88), linewidth=1)
+plot(showVWAP ? vwapL3 : na, "VWAP -3s", color=color.new(C_VWAP, 88), linewidth=1)
+
+aboveVWAP = close > vwap15
+belowVWAP = close < vwap15
+
+// ════════════════════════════════════════════════════════════
+//  ANCHORED VWAP
+// ════════════════════════════════════════════════════════════
+pivotHigh = ta.pivothigh(high, swingLen, swingLen)
+pivotLow  = ta.pivotlow(low,   swingLen, swingLen)
+
+var float avwap_sumPV_bull = 0.0
+var float avwap_sumV_bull  = 0.0
+var float avwap_sumPV_bear = 0.0
+var float avwap_sumV_bear  = 0.0
+
+if not na(pivotLow)
+    avwap_sumPV_bull := 0.0
+    avwap_sumV_bull  := 0.0
+if not na(pivotHigh)
+    avwap_sumPV_bear := 0.0
+    avwap_sumV_bear  := 0.0
+
+avwap_sumPV_bull := avwap_sumPV_bull + hlc3 * volume
+avwap_sumV_bull  := avwap_sumV_bull  + volume
+avwap_sumPV_bear := avwap_sumPV_bear + hlc3 * volume
+avwap_sumV_bear  := avwap_sumV_bear  + volume
+
+avwap_bull = avwap_sumV_bull > 0 ? avwap_sumPV_bull / avwap_sumV_bull : na
+avwap_bear = avwap_sumV_bear > 0 ? avwap_sumPV_bear / avwap_sumV_bear : na
+
+plot(showAVWAP ? avwap_bull : na, "AVWAP Bull", color=color.new(C_BULL, 30), linewidth=1)
+plot(showAVWAP ? avwap_bear : na, "AVWAP Bear", color=color.new(C_BEAR, 30), linewidth=1)
+
+aboveAVWAP = not na(avwap_bull) and close > avwap_bull
+belowAVWAP = not na(avwap_bear) and close < avwap_bear
+
+// ════════════════════════════════════════════════════════════
+//  SWING LEVELS
+// ════════════════════════════════════════════════════════════
+var float lastSwingHi = na
+var float lastSwingLo = na
+var line  swingHiLine = na
+var line  swingLoLine = na
+
+if not na(pivotHigh)
+    lastSwingHi := high[swingLen]
+    if not na(swingHiLine)
+        line.delete(swingHiLine)
+    if showSwing
+        swingHiLine := line.new(bar_index - swingLen, lastSwingHi, bar_index, lastSwingHi, xloc=xloc.bar_index, extend=extend.right, color=color.new(C_GOLD, 45), width=1, style=line.style_dotted)
+
+if not na(pivotLow)
+    lastSwingLo := low[swingLen]
+    if not na(swingLoLine)
+        line.delete(swingLoLine)
+    if showSwing
+        swingLoLine := line.new(bar_index - swingLen, lastSwingLo, bar_index, lastSwingLo, xloc=xloc.bar_index, extend=extend.right, color=color.new(C_GOLD, 45), width=1, style=line.style_dotted)
+
+// ════════════════════════════════════════════════════════════
+//  ATR + VOLUME
+// ════════════════════════════════════════════════════════════
+atr15   = ta.atr(atrLen)
+volMA15 = ta.sma(volume, volLen)
+instVol = volume > volMA15 * volMult
+avgVol  = volume > volMA15
+slDist  = atr15 * slMult
+tpDist  = slDist * rrRatio
+
+// ════════════════════════════════════════════════════════════
+//  PREMIUM / DISCOUNT
+// ════════════════════════════════════════════════════════════
+rangeHigh  = ta.highest(high, 50)
+rangeLow   = ta.lowest(low,   50)
+rangeMid   = (rangeHigh + rangeLow) / 2
+inDiscount = close < rangeMid
+inPremium  = close > rangeMid
+
+// ════════════════════════════════════════════════════════════
+//  CRYPTO SESSIONS (UTC)
+// ════════════════════════════════════════════════════════════
+inAsia   = not na(time(timeframe.period, "0000-0800", tzSess))
+inLondon = not na(time(timeframe.period, "0800-1200", tzSess))
+inNY     = not na(time(timeframe.period, "1300-1700", tzSess))
+inActive = inLondon or inNY
+
+bgcolor(showSess and inAsia   ? C_ASIA : na, title="Asia Session")
+bgcolor(showSess and inLondon ? C_LDN  : na, title="London Session")
+bgcolor(showSess and inNY     ? C_NY   : na, title="NY Session")
+
+// ════════════════════════════════════════════════════════════
+//  MARKET STRUCTURE  BOS / CHoCH
+// ════════════════════════════════════════════════════════════
+var float msBearSwingHi = na
+var float msBullSwingLo = na
+
+if not na(pivotHigh) and barstate.isconfirmed
+    msBearSwingHi := high[swingLen]
+if not na(pivotLow) and barstate.isconfirmed
+    msBullSwingLo := low[swingLen]
+
+bos_bull   = not na(msBearSwingHi) and close > msBearSwingHi and close[1] <= msBearSwingHi and d1_uptrend   and barstate.isconfirmed
+bos_bear   = not na(msBullSwingLo) and close < msBullSwingLo and close[1] >= msBullSwingLo and d1_downtrend and barstate.isconfirmed
+choch_bull = not na(msBullSwingLo) and close < msBullSwingLo and close[1] >= msBullSwingLo and d1_uptrend   and barstate.isconfirmed
+choch_bear = not na(msBearSwingHi) and close > msBearSwingHi and close[1] <= msBearSwingHi and d1_downtrend and barstate.isconfirmed
+
+if bos_bull and showMS and barstate.isconfirmed
+    label.new(bar_index, high + atr15 * 0.5, "BOS ▲", style=label.style_none, textcolor=C_BOS, size=size.tiny)
+if bos_bear and showMS and barstate.isconfirmed
+    label.new(bar_index, low - atr15 * 0.5, "BOS ▼", style=label.style_none, textcolor=C_BOS, size=size.tiny)
+if choch_bull and showMS and barstate.isconfirmed
+    label.new(bar_index, low - atr15 * 0.8, "CHoCH ⚠", style=label.style_none, textcolor=C_CHOCH, size=size.tiny)
+if choch_bear and showMS and barstate.isconfirmed
+    label.new(bar_index, high + atr15 * 0.8, "CHoCH ⚠", style=label.style_none, textcolor=C_CHOCH, size=size.tiny)
+
+// ════════════════════════════════════════════════════════════
+//  DISPLACEMENT
+// ════════════════════════════════════════════════════════════
+dispBody    = math.abs(close - open)
+dispBullBar = close > open and dispBody > atr15 * 2.5 and close > high[1] and barstate.isconfirmed
+dispBearBar = close < open and dispBody > atr15 * 2.5 and close < low[1]  and barstate.isconfirmed
+
+bgcolor(showDisp and dispBullBar ? color.new(C_GOLD, 88) : na, title="Bull Displacement")
+bgcolor(showDisp and dispBearBar ? color.new(C_GOLD, 88) : na, title="Bear Displacement")
+
+if dispBullBar and showDisp and barstate.isconfirmed
+    label.new(bar_index, low - atr15, "🐋↑", style=label.style_none, textcolor=C_GOLD, size=size.small)
+if dispBearBar and showDisp and barstate.isconfirmed
+    label.new(bar_index, high + atr15, "🐋↓", style=label.style_none, textcolor=C_GOLD, size=size.small)
+
+// ════════════════════════════════════════════════════════════
+//  LIQUIDITY POOLS
+// ════════════════════════════════════════════════════════════
+liqThresh    = atr15 * 0.20
+highestHigh  = ta.highest(high, liqLookbk)
+lowestLow    = ta.lowest(low,   liqLookbk)
+equalHighs   = math.abs(high - highestHigh) < liqThresh and high[1] > high[2] and high[1] > high[0]
+equalLows    = math.abs(low  - lowestLow)   < liqThresh and low[1]  < low[2]  and low[1]  < low[0]
+bullLiqSweep = low < lowestLow[1]    and close > lowestLow[1]    and instVol
+bearLiqSweep = high > highestHigh[1] and close < highestHigh[1]  and instVol
+
+if equalHighs and showLiq and barstate.isconfirmed
+    label.new(bar_index - 1, high[1] + atr15 * 0.4, "SSL", style=label.style_none, textcolor=color.new(C_BEAR, 20), size=size.tiny)
+if equalLows and showLiq and barstate.isconfirmed
+    label.new(bar_index - 1, low[1] - atr15 * 0.4, "BSL", style=label.style_none, textcolor=color.new(C_BULL, 20), size=size.tiny)
+if bullLiqSweep and showLiq and barstate.isconfirmed
+    label.new(bar_index, low - atr15 * 0.8, "SWEEP↑", style=label.style_none, textcolor=C_GOLD, size=size.small)
+if bearLiqSweep and showLiq and barstate.isconfirmed
+    label.new(bar_index, high + atr15 * 0.8, "SWEEP↓", style=label.style_none, textcolor=C_GOLD, size=size.small)
+
+// ════════════════════════════════════════════════════════════
+//  ORDER BLOCKS
+// ════════════════════════════════════════════════════════════
+isBullOB = close[1] < open[1] and close > open and close > high[1] and volume > volMA15 * obStrength and barstate.isconfirmed
+isBearOB = close[1] > open[1] and close < open and close < low[1]  and volume > volMA15 * obStrength and barstate.isconfirmed
+
+var float ob_bull_hi  = na
+var float ob_bull_lo  = na
+var float ob_bear_hi  = na
+var float ob_bear_lo  = na
+var box   ob_bull_box = na
+var box   ob_bear_box = na
+
+if isBullOB
+    ob_bull_hi := math.max(open[1], close[1])
+    ob_bull_lo := math.min(open[1], close[1])
+    if not na(ob_bull_box)
+        box.delete(ob_bull_box)
+    if showOB
+        ob_bull_box := box.new(bar_index - 1, ob_bull_hi, bar_index, ob_bull_lo, xloc=xloc.bar_index, extend=extend.right, border_color=C_BULL, bgcolor=C_OB_B, border_width=1)
+
+if isBearOB
+    ob_bear_hi := math.max(open[1], close[1])
+    ob_bear_lo := math.min(open[1], close[1])
+    if not na(ob_bear_box)
+        box.delete(ob_bear_box)
+    if showOB
+        ob_bear_box := box.new(bar_index - 1, ob_bear_hi, bar_index, ob_bear_lo, xloc=xloc.bar_index, extend=extend.right, border_color=C_BEAR, bgcolor=C_OB_S, border_width=1)
+
+inBullOB = not na(ob_bull_lo) and close >= ob_bull_lo and close <= ob_bull_hi
+inBearOB = not na(ob_bear_lo) and close >= ob_bear_lo and close <= ob_bear_hi
+
+// ════════════════════════════════════════════════════════════
+//  FAIR VALUE GAPS
+// ════════════════════════════════════════════════════════════
+bullFVG = low > high[2] and barstate.isconfirmed
+bearFVG = high < low[2]  and barstate.isconfirmed
+
+if bullFVG and showFVG
+    box.new(bar_index - 2, low, bar_index, high[2], xloc=xloc.bar_index, extend=extend.none, border_color=color.new(C_BULL, 50), bgcolor=C_FVG_B, border_width=1)
+if bearFVG and showFVG
+    box.new(bar_index - 2, low[2], bar_index, high, xloc=xloc.bar_index, extend=extend.none, border_color=color.new(C_BEAR, 50), bgcolor=C_FVG_S, border_width=1)
+
+// ════════════════════════════════════════════════════════════
+//  15M ENTRY  (dual-gated by 1H)
+// ════════════════════════════════════════════════════════════
+totalRange = math.max(high - low, 0.0001)
+bodyRatio  = math.abs(close - open) / totalRange
+bull15     = close > open and bodyRatio > 0.55 and (close - low) / totalRange > 0.55 and avgVol
+bear15     = close < open and bodyRatio > 0.55 and (high - close) / totalRange > 0.55 and avgVol
+bullEngulf = close > open and close > high[1] and open <= close[1] and avgVol
+bearEngulf = close < open and close < low[1]  and open >= close[1] and avgVol
+
+ema9_15  = ta.ema(close, 9)
+ema21_15 = ta.ema(close, 21)
+ema50_15 = ta.ema(close, 50)
+ema15Up  = ema9_15 > ema21_15 and ema21_15 > ema50_15 and h1_emaUp
+ema15Dn  = ema9_15 < ema21_15 and ema21_15 < ema50_15 and h1_emaDn
+
+rsi15    = ta.rsi(close, 14)
+rsi15Up  = rsi15 > 50 and rsi15 < 78
+rsi15Dn  = rsi15 < 50 and rsi15 > 22
+
+macdLine = ta.ema(close, 12) - ta.ema(close, 26)
+signLine = ta.ema(macdLine, 9)
+macdHist = macdLine - signLine
+macd15Up = macdHist > 0 and macdHist > macdHist[1]
+macd15Dn = macdHist < 0 and macdHist < macdHist[1]
+
+// ════════════════════════════════════════════════════════════
+//  SIGNAL SCORING  (8 layers)
+// ════════════════════════════════════════════════════════════
+L1 = d1_uptrend ? 1 : 0
+L2 = h1_bullBar and h1_emaUp and btcGateLong ? 1 : 0
+L3 = h1_momUp ? 1 : 0
+L4 = (bull15 or bullEngulf or bullLiqSweep) and ema15Up ? 1 : 0
+L5 = instVol and (macd15Up or rsi15Up) ? 1 : 0
+L6 = aboveVWAP and aboveAVWAP ? 1 : 0
+L7 = inBullOB or bullLiqSweep ? 1 : 0
+L8 = inDiscount ? 1 : 0
+longScore = L1 + L2 + L3 + L4 + L5 + L6 + L7 + L8
+
+S1 = d1_downtrend ? 1 : 0
+S2 = h1_bearBar and h1_emaDn and btcGateShort ? 1 : 0
+S3 = h1_momDn ? 1 : 0
+S4 = (bear15 or bearEngulf or bearLiqSweep) and ema15Dn ? 1 : 0
+S5 = instVol and (macd15Dn or rsi15Dn) ? 1 : 0
+S6 = belowVWAP and belowAVWAP ? 1 : 0
+S7 = inBearOB or bearLiqSweep ? 1 : 0
+S8 = inPremium ? 1 : 0
+shortScore = S1 + S2 + S3 + S4 + S5 + S6 + S7 + S8
+
+// ════════════════════════════════════════════════════════════
+//  EFFECTIVE MINIMUM
+// ════════════════════════════════════════════════════════════
+effectiveMin = inActive ? math.max(minScore - 1, 3) : minScore
+
+// ════════════════════════════════════════════════════════════
+//  FINAL SIGNALS
+// ════════════════════════════════════════════════════════════
+longRaw  = longScore  >= effectiveMin and barstate.isconfirmed
+shortRaw = shortScore >= effectiveMin and barstate.isconfirmed and not spotMode
+
+var int lastSig = 0
+longSignal  = longRaw  and lastSig != 1
+shortSignal = shortRaw and lastSig != -1
+
+if longSignal
+    lastSig := 1
+if shortSignal
+    lastSig := -1
+
+// ════════════════════════════════════════════════════════════
+//  TRAILING STOP ENGINE
+// ════════════════════════════════════════════════════════════
+var float trailStop   = na
+var float trailEntry  = na
+var int   trailDir    = 0
+var bool  trailActive = false
+var bool  trailHit    = false
+
+trailDist = atr15 * trailAtrMult
+
+if longSignal
+    trailEntry  := close
+    trailStop   := close - slDist
+    trailDir    := 1
+    trailActive := false
+    trailHit    := false
+
+if shortSignal
+    trailEntry  := close
+    trailStop   := close + slDist
+    trailDir    := -1
+    trailActive := false
+    trailHit    := false
+
+if trailDir == 1 and not na(trailEntry)
+    if close >= trailEntry + atr15 * trailActivation
+        trailActive := true
+    if trailActive
+        trailStop := math.max(trailStop, high - trailDist)
+    if low <= trailStop
+        trailHit   := true
+        trailDir   := 0
+        trailEntry := na
+
+if trailDir == -1 and not na(trailEntry)
+    if close <= trailEntry - atr15 * trailActivation
+        trailActive := true
+    if trailActive
+        trailStop := math.min(trailStop, low + trailDist)
+    if high >= trailStop
+        trailHit   := true
+        trailDir   := 0
+        trailEntry := na
+
+plot(showTrail and trailDir != 0 ? trailStop : na, "Trail Stop",
+     color=trailActive ? C_TRAIL : color.new(C_TRAIL, 65), linewidth=2, style=plot.style_stepline)
+
+// ════════════════════════════════════════════════════════════
+//  TP / SL LINES
+// ════════════════════════════════════════════════════════════
+var line tp_line    = na
+var line sl_line    = na
+var line entry_line = na
+
+if (longSignal or shortSignal) and showTPSL
+    if not na(tp_line)
+        line.delete(tp_line)
+    if not na(sl_line)
+        line.delete(sl_line)
+    if not na(entry_line)
+        line.delete(entry_line)
+    tp_val     = longSignal ? close + tpDist : close - tpDist
+    sl_val     = longSignal ? close - slDist : close + slDist
+    tp_line    := line.new(bar_index, tp_val, bar_index + 1, tp_val, xloc=xloc.bar_index, extend=extend.right, color=color.new(C_BULL, 0), width=2, style=line.style_dashed)
+    sl_line    := line.new(bar_index, sl_val, bar_index + 1, sl_val, xloc=xloc.bar_index, extend=extend.right, color=color.new(C_BEAR, 0), width=2, style=line.style_dashed)
+    entry_line := line.new(bar_index, close,  bar_index + 1, close,  xloc=xloc.bar_index, extend=extend.right, color=color.new(C_GOLD, 0), width=1, style=line.style_dotted)
+
+// ════════════════════════════════════════════════════════════
+//  STORE LAST LEVELS
+// ════════════════════════════════════════════════════════════
+var float lastEntry = na
+var float lastTP    = na
+var float lastSL    = na
+var int   lastDir   = 0
+
+if longSignal
+    lastEntry := close
+    lastSL    := close - slDist
+    lastTP    := close + tpDist
+    lastDir   := 1
+if shortSignal
+    lastEntry := close
+    lastSL    := close + slDist
+    lastTP    := close - tpDist
+    lastDir   := -1
+
+// ════════════════════════════════════════════════════════════
+//  SIGNAL LABELS
+// ════════════════════════════════════════════════════════════
+scoreTag(s) => s >= 7 ? "[S+]" : s >= 5 ? "[A+]" : s == 4 ? "[A]" : "[B]"
+sessQual    = inNY ? " 🔥NY" : inLondon ? " 🇬🇧LDN" : inAsia ? " 🌙ASIA" : " ⚠LOW-LIQ"
+btcTag      = isAltcoin and btcFilter ? (btcGateLong ? " ₿✓" : " ₿✗") : ""
+
+if longSignal and barstate.isconfirmed
+    label.new(bar_index, low - atr15 * 1.8,
+      "▲ LONG " + scoreTag(longScore) + " " + str.tostring(longScore) + "/8" + sessQual + btcTag + "\n" +
+      "[" + pairLabel + "]  " + syminfo.ticker + "\n" +
+      "Entry : " + str.tostring(math.round(lastEntry, 2)) + "\n" +
+      "SL    : " + str.tostring(math.round(lastEntry - slDist, 2)) + "\n" +
+      "TP    : " + str.tostring(math.round(lastEntry + tpDist, 2)) + "\n" +
+      "Trail : arms @+" + str.tostring(trailActivation) + "ATR | dist " + str.tostring(trailAtrMult) + "ATR",
+      style=label.style_label_up, color=color.new(#0d47a1, 0), textcolor=color.white, size=size.small)
+
+if shortSignal and barstate.isconfirmed
+    label.new(bar_index, high + atr15 * 1.8,
+      "▼ SHORT " + scoreTag(shortScore) + " " + str.tostring(shortScore) + "/8" + sessQual + btcTag + "\n" +
+      "[" + pairLabel + "]  " + syminfo.ticker + "\n" +
+      "Entry : " + str.tostring(math.round(lastEntry, 2)) + "\n" +
+      "SL    : " + str.tostring(math.round(lastEntry + slDist, 2)) + "\n" +
+      "TP    : " + str.tostring(math.round(lastEntry - tpDist, 2)) + "\n" +
+      "Trail : arms @-" + str.tostring(trailActivation) + "ATR | dist " + str.tostring(trailAtrMult) + "ATR",
+      style=label.style_label_down, color=color.new(#b71c1c, 0), textcolor=color.white, size=size.small)
+
+// ════════════════════════════════════════════════════════════
+//  EMA PLOTS + TREND BACKGROUND
+// ════════════════════════════════════════════════════════════
+plot(ema9_15,  "EMA 9",  color=color.new(#29b6f6, 0), linewidth=1)
+plot(ema21_15, "EMA 21", color=color.new(#ce93d8, 0), linewidth=1)
+plot(ema50_15, "EMA 50", color=color.new(C_GOLD,  0), linewidth=2)
+bgcolor(d1_uptrend ? color.new(C_BULL, 97) : d1_downtrend ? color.new(C_BEAR, 97) : na, title="1D Trend BG")
+
+// ════════════════════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════════════════════
+yesNo(v)    => v ? "YES" : "NO"
+yesClr(v)   => v ? C_BULL : color.new(C_BEAR, 30)
+gradeClr(s) => s >= 7 ? C_GOLD : s >= 5 ? C_BULL : s >= 3 ? C_BEAR : C_GRAY
+
+// ════════════════════════════════════════════════════════════
+//  DASHBOARD VARIABLES
+// ════════════════════════════════════════════════════════════
+sigTxt   = longSignal ? "▲ LONG" : shortSignal ? "▼ SHORT" : "— WAIT"
+sigClr   = longSignal ? C_BULL   : shortSignal  ? C_BEAR    : C_GRAY
+volPct   = str.tostring(math.round(volume / volMA15 * 100)) + "%"
+volClr   = instVol ? C_GOLD : avgVol ? C_BULL : C_GRAY
+sessDash = inNY ? "NY 🔥" : inLondon ? "LONDON 🇬🇧" : inAsia ? "ASIA 🌙" : "OFF-SESSION"
+sessClr  = inNY ? C_GOLD  : inLondon ? #42a5f5 : inAsia ? color.new(C_GOLD, 50) : C_GRAY
+pdTxt_l  = inDiscount ? "DISCOUNT ✓" : "PREMIUM ✗"
+pdTxt_s  = inPremium  ? "PREMIUM ✓"  : "DISCOUNT ✗"
+pdClr_l  = inDiscount ? C_BULL : color.new(C_BEAR, 30)
+pdClr_s  = inPremium  ? C_BULL : color.new(C_BEAR, 30)
+btcH1Txt = btc_bullH1 ? "BULL ✓" : btc_bearH1 ? "BEAR ✗" : "NEUTRAL"
+btcH1Clr = btc_bullH1 ? C_BULL   : btc_bearH1 ? C_BEAR   : C_GRAY
+msTxt_l  = bos_bull ? "BOS ▲" : choch_bull ? "CHoCH ⚠" : "—"
+msTxt_s  = bos_bear ? "BOS ▼" : choch_bear ? "CHoCH ⚠" : "—"
+msClr_l  = bos_bull ? C_BOS  : choch_bull ? C_CHOCH : C_GRAY
+msClr_s  = bos_bear ? C_BOS  : choch_bear ? C_CHOCH : C_GRAY
+l4e      = (bull15 or bullEngulf or bullLiqSweep) and ema15Up
+s4e      = (bear15 or bearEngulf or bearLiqSweep) and ema15Dn
+lvm      = instVol and (macd15Up or rsi15Up)
+svm      = instVol and (macd15Dn or rsi15Dn)
+trailTxt = trailDir != 0 and not na(trailStop) ? (trailActive ? "✅ " : "⏳ ") + str.tostring(math.round(trailStop, 2)) : "—"
+trailClr = trailActive ? C_TRAIL : trailDir != 0 ? color.new(C_TRAIL, 50) : C_GRAY
+vwapDist = str.tostring(math.round(math.abs(close - vwap15) / atr15 * 10) / 10) + "× ATR"
+modeTag  = spotMode ? "SPOT" : "FUTURES"
+modeClr  = spotMode ? #42a5f5 : C_GOLD
+
+// ════════════════════════════════════════════════════════════
+//  DASHBOARD
+//  ► FIX: var table declared at TOP LEVEL — not inside if block
+//         This prevents the table from dismounting when the chart
+//         is panned/scrolled (barstate.islast briefly goes false)
+// ════════════════════════════════════════════════════════════
+var table dash = table.new(position.top_right, 3, 20, bgcolor=color.new(#060612, 5), border_color=color.new(#1a2a3a, 0), border_width=1, frame_color=#1a2a3a, frame_width=2)
+
+if showDash and barstate.islast
+    table.cell(dash, 0, 0, "CRYPTO INST. FLOW v2",    text_color=C_GOLD,  text_size=size.small, bgcolor=color.new(#0d1b2a, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 0, "BINANCE  |  " + modeTag,  text_color=modeClr, text_size=size.small, bgcolor=color.new(#0d1b2a, 0), text_halign=text.align_center)
+    table.cell(dash, 2, 0, pairLabel + " · " + timeframe.period, text_color=C_GRAY, text_size=size.tiny, bgcolor=color.new(#0d1b2a, 0))
+    table.cell(dash, 0, 1, "LAYER",          text_color=C_GRAY, text_size=size.tiny, bgcolor=color.new(#111122, 0))
+    table.cell(dash, 1, 1, "LONG",           text_color=C_BULL, text_size=size.tiny, bgcolor=color.new(#111122, 0))
+    table.cell(dash, 2, 1, "SHORT",          text_color=C_BEAR, text_size=size.tiny, bgcolor=color.new(#111122, 0))
+    table.cell(dash, 0, 2,  "1D Trend",      text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 2,  yesNo(d1_uptrend),   text_color=yesClr(d1_uptrend),   text_size=size.tiny)
+    table.cell(dash, 2, 2,  yesNo(d1_downtrend), text_color=yesClr(d1_downtrend), text_size=size.tiny)
+    table.cell(dash, 0, 3,  "1H Structure",  text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 3,  yesNo(h1_bullBar and h1_emaUp), text_color=yesClr(h1_bullBar and h1_emaUp), text_size=size.tiny)
+    table.cell(dash, 2, 3,  yesNo(h1_bearBar and h1_emaDn), text_color=yesClr(h1_bearBar and h1_emaDn), text_size=size.tiny)
+    table.cell(dash, 0, 4,  "1H Momentum",   text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 4,  yesNo(h1_momUp), text_color=yesClr(h1_momUp), text_size=size.tiny)
+    table.cell(dash, 2, 4,  yesNo(h1_momDn), text_color=yesClr(h1_momDn), text_size=size.tiny)
+    table.cell(dash, 0, 5,  "15M Entry",     text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 5,  yesNo(l4e), text_color=yesClr(l4e), text_size=size.tiny)
+    table.cell(dash, 2, 5,  yesNo(s4e), text_color=yesClr(s4e), text_size=size.tiny)
+    table.cell(dash, 0, 6,  "Vol + Mom",     text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 6,  yesNo(lvm), text_color=yesClr(lvm), text_size=size.tiny)
+    table.cell(dash, 2, 6,  yesNo(svm), text_color=yesClr(svm), text_size=size.tiny)
+    table.cell(dash, 0, 7,  "VWAP",          text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 7,  yesNo(aboveVWAP and aboveAVWAP), text_color=yesClr(aboveVWAP and aboveAVWAP), text_size=size.tiny)
+    table.cell(dash, 2, 7,  yesNo(belowVWAP and belowAVWAP), text_color=yesClr(belowVWAP and belowAVWAP), text_size=size.tiny)
+    table.cell(dash, 0, 8,  "OB / Liq",      text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 8,  yesNo(inBullOB or bullLiqSweep), text_color=yesClr(inBullOB or bullLiqSweep), text_size=size.tiny)
+    table.cell(dash, 2, 8,  yesNo(inBearOB or bearLiqSweep), text_color=yesClr(inBearOB or bearLiqSweep), text_size=size.tiny)
+    table.cell(dash, 0, 9,  "Prem/Disc",     text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 9,  pdTxt_l, text_color=pdClr_l, text_size=size.tiny)
+    table.cell(dash, 2, 9,  pdTxt_s, text_color=pdClr_s, text_size=size.tiny)
+    table.cell(dash, 0, 10, "Mkt Structure", text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 10, msTxt_l, text_color=msClr_l, text_size=size.tiny)
+    table.cell(dash, 2, 10, msTxt_s, text_color=msClr_s, text_size=size.tiny)
+    table.cell(dash, 0, 11, "BTC 1H",        text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 11, btcH1Txt, text_color=btcH1Clr, text_size=size.tiny)
+    table.cell(dash, 2, 11, btcFilter ? "FILTER ON" : "OFF", text_color=btcFilter ? C_GOLD : C_GRAY, text_size=size.tiny)
+    table.cell(dash, 0, 12, "Session",        text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 12, sessDash, text_color=sessClr, text_size=size.tiny)
+    table.cell(dash, 2, 12, inActive ? "✓ PRIME" : "LOW-LIQ", text_color=inActive ? C_GOLD : C_GRAY, text_size=size.tiny)
+    table.cell(dash, 0, 13, "SCORE /8",      text_color=C_GOLD,  text_size=size.small, bgcolor=color.new(#0d1b2a, 0))
+    table.cell(dash, 1, 13, str.tostring(longScore)  + " / 8", text_color=gradeClr(longScore),  text_size=size.small, bgcolor=color.new(#0d1b2a, 0))
+    table.cell(dash, 2, 13, str.tostring(shortScore) + " / 8", text_color=gradeClr(shortScore), text_size=size.small, bgcolor=color.new(#0d1b2a, 0))
+    table.cell(dash, 0, 14, "SIGNAL",         text_color=C_GOLD,  text_size=size.small)
+    table.cell(dash, 1, 14, sigTxt,            text_color=sigClr,  text_size=size.small)
+    table.cell(dash, 2, 14, "min: " + str.tostring(effectiveMin), text_color=C_GRAY, text_size=size.tiny)
+    table.cell(dash, 0, 15, "Trail Stop",    text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 15, trailTxt, text_color=trailClr, text_size=size.tiny)
+    table.cell(dash, 2, 15, trailDir == 1 ? "LONG" : trailDir == -1 ? "SHORT" : "—", text_color=trailDir == 1 ? C_BULL : trailDir == -1 ? C_BEAR : C_GRAY, text_size=size.tiny)
+    table.cell(dash, 0, 16, "VWAP dist",     text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 16, aboveVWAP ? "ABOVE" : "BELOW", text_color=aboveVWAP ? C_BULL : C_BEAR, text_size=size.tiny)
+    table.cell(dash, 2, 16, vwapDist, text_color=C_GRAY, text_size=size.tiny)
+    table.cell(dash, 0, 17, "Volume",         text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 17, instVol ? "🐋 WHALE" : avgVol ? "AVG+" : "LOW", text_color=volClr, text_size=size.tiny)
+    table.cell(dash, 2, 17, volPct, text_color=volClr, text_size=size.tiny)
+    table.cell(dash, 0, 18, "Displacement",  text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 18, dispBullBar ? "🐋 BULL" : "—", text_color=dispBullBar ? C_GOLD : C_GRAY, text_size=size.tiny)
+    table.cell(dash, 2, 18, dispBearBar ? "🐋 BEAR" : "—", text_color=dispBearBar ? C_GOLD : C_GRAY, text_size=size.tiny)
+    table.cell(dash, 0, 19, "Spot Mode",     text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 19, spotMode ? "ON — LONG ONLY" : "OFF", text_color=spotMode ? #42a5f5 : C_GRAY, text_size=size.tiny)
+    table.cell(dash, 2, 19, isAltcoin ? "ALT RULES" : "MAJOR RULES", text_color=isAltcoin ? C_GOLD : C_VWAP, text_size=size.tiny)
+
+// ════════════════════════════════════════════════════════════
+//  LEVELS BOX
+//  ► FIX: var table declared at TOP LEVEL — same reason as above
+// ════════════════════════════════════════════════════════════
+var table lvl = table.new(position.bottom_right, 2, 9, bgcolor=color.new(#060612, 5), border_color=color.new(#1a2a3a, 0), border_width=1, frame_color=#1a2a3a, frame_width=2)
+
+if showLvlBox and barstate.islast and not na(lastEntry)
+    dirTxt   = lastDir == 1 ? "▲  LONG" : "▼  SHORT"
+    dirClr   = lastDir == 1 ? C_BULL : C_BEAR
+    slPts    = str.tostring(math.round(math.abs(lastEntry - lastSL), 2))
+    tpPts    = str.tostring(math.round(math.abs(lastTP - lastEntry), 2))
+    trailLvl = trailDir != 0 and not na(trailStop) ? str.tostring(math.round(trailStop, 2)) : "—"
+    trailSt  = trailActive ? "✅ TRAILING" : trailDir != 0 ? "⏳ ARMED" : "—"
+    table.cell(lvl, 0, 0, "LAST SIGNAL",  text_color=C_GOLD,  text_size=size.small, bgcolor=color.new(#0d1b2a, 0), text_halign=text.align_center)
+    table.cell(lvl, 1, 0, dirTxt,          text_color=dirClr,  text_size=size.small, bgcolor=color.new(#0d1b2a, 0))
+    table.cell(lvl, 0, 1, "Entry",         text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 1, str.tostring(math.round(lastEntry, 2)), text_color=C_GOLD,  text_size=size.small)
+    table.cell(lvl, 0, 2, "Stop Loss",     text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 2, str.tostring(math.round(lastSL, 2)) + "  (-" + slPts + ")", text_color=C_BEAR, text_size=size.small)
+    table.cell(lvl, 0, 3, "Take Profit",   text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 3, str.tostring(math.round(lastTP, 2)) + "  (+" + tpPts + ")", text_color=C_BULL, text_size=size.small)
+    table.cell(lvl, 0, 4, "Trail Stop",    text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 4, trailLvl,         text_color=C_TRAIL, text_size=size.small)
+    table.cell(lvl, 0, 5, "Trail Status",  text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 5, trailSt,          text_color=trailClr, text_size=size.tiny)
+    table.cell(lvl, 0, 6, "R:R",           text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 6, "1 : " + str.tostring(rrRatio), text_color=C_WHITE, text_size=size.tiny)
+    table.cell(lvl, 0, 7, "ATR",           text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 7, str.tostring(math.round(atr15, 2)), text_color=C_WHITE, text_size=size.tiny)
+    table.cell(lvl, 0, 8, "Score",         text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 8, str.tostring(lastDir == 1 ? longScore : shortScore) + " / 8", text_color=C_GOLD, text_size=size.tiny)
+
+// ════════════════════════════════════════════════════════════
+//  ALERTS
+// ════════════════════════════════════════════════════════════
+alertcondition(longSignal,                                "CIF·v2 LONG",        "🟢 LONG — {{ticker}} {{interval}}")
+alertcondition(shortSignal,                               "CIF·v2 SHORT",       "🔴 SHORT — {{ticker}} {{interval}}")
+alertcondition(longSignal or shortSignal,                 "CIF·v2 Any Signal",  "⚡ Signal — {{ticker}} {{interval}}")
+alertcondition(longSignal and inActive,                   "CIF·v2 LONG Prime",  "🔥 PRIME LONG — {{ticker}}")
+alertcondition(shortSignal and inActive,                  "CIF·v2 SHORT Prime", "🔥 PRIME SHORT — {{ticker}}")
+alertcondition(bullLiqSweep,                              "CIF·v2 Bull Sweep",  "🟢 Bull sweep — {{ticker}}")
+alertcondition(bearLiqSweep,                              "CIF·v2 Bear Sweep",  "🔴 Bear sweep — {{ticker}}")
+alertcondition(bos_bull,                                  "CIF·v2 BOS Bull",    "📈 BOS Bull — {{ticker}}")
+alertcondition(bos_bear,                                  "CIF·v2 BOS Bear",    "📉 BOS Bear — {{ticker}}")
+alertcondition(choch_bull or choch_bear,                  "CIF·v2 CHoCH",       "⚠️ CHoCH — {{ticker}}")
+alertcondition(trailHit,                                  "CIF·v2 Trail Hit",   "🎯 Trail stop hit — {{ticker}}")
+alertcondition(dispBullBar or dispBearBar,                "CIF·v2 Whale",       "🐋 Whale displacement — {{ticker}}")
+alertcondition(isAltcoin and not btc_bullH1 and longRaw,  "CIF·v2 BTC Warning", "⚠️ Alt long but BTC bearish — {{ticker}}")
