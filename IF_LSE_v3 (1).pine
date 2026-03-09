@@ -1,0 +1,766 @@
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  INSTITUTIONAL FLOW v3  —  LSE  (Pine Script v5)                    ║
+// ║  Works on ANY LSE ticker (GBX pence stocks & GBP stocks)            ║
+// ║  SET CHART TO 15M  |  overlay=true  |  Non-Repainting               ║
+// ║  4H Trend · 1H Trade · 15M Entry · VWAP · Liq · OB · FVG           ║
+// ║  + Trailing Stop · BOS/CHoCH · Displacement · Premium/Discount      ║
+// ║  + LSE Kill Zones (Open / US Overlap / Close) · Score /8            ║
+// ║  + Session Filter · GBX/GBP Auto-Scale Guard                        ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+//@version=5
+indicator("Institutional Flow v3 [LSE MTF]", shorttitle="IF·LSE·v3", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=400)
+
+// ════════════════════════════════════════════════════════════
+//  INPUTS
+// ════════════════════════════════════════════════════════════
+grpMTF    = "── Timeframes ──"
+tf_trend  = input.timeframe("240", "Trend TF (4H)", group=grpMTF)
+tf_trade  = input.timeframe("60",  "Trade TF (1H)", group=grpMTF)
+
+grpVol    = "── Volume ──"
+volLen    = input.int(20,    "Volume MA Length",         minval=5,   group=grpVol)
+// LSE institutional volume threshold is lower than NQ futures — 1.3× is appropriate
+volMult   = input.float(1.3, "Institutional Spike Mult", step=0.1,   group=grpVol,
+             tooltip="LSE equities: 1.2-1.5 recommended. AIM stocks use higher value (1.8+) to filter noise.")
+
+grpLiq    = "── Liquidity ──"
+swingLen  = input.int(10,    "Swing Pivot Length",       minval=3,   group=grpLiq)
+liqLookbk = input.int(50,    "Liquidity Lookback",       minval=20,  group=grpLiq)
+
+grpOB     = "── Order Blocks ──"
+obStrength = input.float(1.2, "OB Vol Strength",         step=0.1,   group=grpOB)
+
+grpSig    = "── Signal Quality ──"
+minScore  = input.int(4,     "Min Confirmations (3-8)",  minval=3, maxval=8, group=grpSig)
+
+grpRM     = "── Risk Management ──"
+rrRatio        = input.float(2.0, "R:R Ratio",                step=0.5,  group=grpRM)
+atrLen         = input.int(14,    "ATR Length",                minval=5,  group=grpRM)
+// LSE equities are less volatile per ATR unit than NQ futures — 1.0× is conservative default
+slMult         = input.float(1.0, "SL ATR Multiplier",         step=0.1,  group=grpRM)
+trailActivation= input.float(1.0, "Trail Activate (ATR mult)", step=0.1,  group=grpRM,
+                  tooltip="How far price must move in your favour before trailing stop activates")
+trailAtrMult   = input.float(0.8, "Trail Distance (ATR mult)", step=0.1,  group=grpRM,
+                  tooltip="Trailing stop distance from current price in ATR units")
+
+// ────────────────────────────────────────────────────────────
+//  LSE SESSION KILL ZONES
+//  London Stock Exchange: Open 08:00 / Close 16:30 GMT
+//  Three high-probability windows:
+//    1. LSE Open      → 08:00-09:30 (institutional order flow sets daily direction)
+//    2. US Open Overlap → 13:30-15:00 (S&P/Dow open creates cross-market momentum)
+//    3. LSE Close     → 15:30-16:30 (institutional rebalancing + EOD stops hunted)
+// ────────────────────────────────────────────────────────────
+grpSess   = "── LSE Session Kill Zones ──"
+showKZ      = input.bool(true,  "Show Kill Zones",              group=grpSess)
+showKZ_open = input.bool(true,  "  Show LSE Open (08:00-09:30)", group=grpSess)
+showKZ_us   = input.bool(true,  "  Show US Overlap (13:30-15:00)", group=grpSess)
+showKZ_cls  = input.bool(true,  "  Show LSE Close (15:30-16:30)", group=grpSess)
+// Use Europe/London so the script auto-handles GMT/BST transitions
+tzSession   = input.string("Europe/London", "Timezone (keep Europe/London for LSE)", group=grpSess,
+               tooltip="Europe/London automatically handles GMT/BST transitions for the LSE calendar.")
+// Session filter: only emit signals during LSE market hours to avoid pre/post-market noise
+filterSession = input.bool(true, "Only signal during LSE hours (08:00-16:30)", group=grpSess, tooltip="Prevents signals on stale 15M bars outside market hours.")
+
+grpVis    = "── Display ──"
+showVWAP  = input.bool(true,  "Show VWAP + Bands",    group=grpVis)
+showAVWAP = input.bool(true,  "Show Anchored VWAP",   group=grpVis)
+showOB    = input.bool(true,  "Show Order Blocks",    group=grpVis)
+showFVG   = input.bool(true,  "Show Fair Value Gaps", group=grpVis)
+showLiq   = input.bool(true,  "Show Liquidity",       group=grpVis)
+showSwing = input.bool(true,  "Show Swing Levels",    group=grpVis)
+showMS    = input.bool(true,  "Show BOS / CHoCH",     group=grpVis)
+showDisp  = input.bool(true,  "Show Displacement",    group=grpVis)
+showDash  = input.bool(true,  "Show Dashboard",       group=grpVis)
+showTPSL  = input.bool(true,  "Show TP / SL Lines",   group=grpVis)
+showTrail = input.bool(true,  "Show Trailing Stop",   group=grpVis)
+showLvlBox= input.bool(true,  "Show Levels Box",      group=grpVis)
+
+// ════════════════════════════════════════════════════════════
+//  COLOURS
+// ════════════════════════════════════════════════════════════
+C_BULL  = #00e676
+C_BEAR  = #ff1744
+C_GOLD  = #ffd600
+C_VWAP  = #29b6f6
+C_WHITE = #e0e0e0
+C_GRAY  = #546e7a
+C_OB_B  = color.new(#1565c0, 75)
+C_OB_S  = color.new(#b71c1c, 75)
+C_FVG_B = color.new(#00e676, 90)
+C_FVG_S = color.new(#ff1744, 90)
+C_TRAIL = #ff9800
+C_BOS   = #ab47bc
+C_CHOCH = #ef5350
+C_DISP  = color.new(#ffd600, 88)
+// Kill zone colours — distinct per window
+C_KZ_OPEN = color.new(#1565c0, 91)   // Blue   - LSE Open
+C_KZ_US   = color.new(#004d40, 91)   // Teal   - US Overlap
+C_KZ_CLS  = color.new(#4a148c, 91)   // Purple - LSE Close
+
+// ════════════════════════════════════════════════════════════
+//  HTF — confirmed bars only, no lookahead
+// ════════════════════════════════════════════════════════════
+f_htf(tf, src) => request.security(syminfo.tickerid, tf, src[1], lookahead=barmerge.lookahead_off)
+
+// ════════════════════════════════════════════════════════════
+//  LSE SESSION DETECTION
+//  time() returns na when outside the window → use not na() pattern
+// ════════════════════════════════════════════════════════════
+inLSE_Open    = not na(time(timeframe.period, "0800-0930",  tzSession))
+inLSE_US      = not na(time(timeframe.period, "1330-1500",  tzSession))
+inLSE_Close   = not na(time(timeframe.period, "1530-1630",  tzSession))
+inAnyKillZone = inLSE_Open or inLSE_US or inLSE_Close
+
+// Full LSE market hours gate (08:00-16:30 Europe/London)
+inLSE_Hours   = not na(time(timeframe.period, "0800-1630",  tzSession))
+
+bgcolor(showKZ and showKZ_open and inLSE_Open  ? C_KZ_OPEN : na, title="KZ: LSE Open")
+bgcolor(showKZ and showKZ_us   and inLSE_US    ? C_KZ_US   : na, title="KZ: US Overlap")
+bgcolor(showKZ and showKZ_cls  and inLSE_Close ? C_KZ_CLS  : na, title="KZ: LSE Close")
+
+// ════════════════════════════════════════════════════════════
+//  4H TREND
+// ════════════════════════════════════════════════════════════
+h4_close  = f_htf(tf_trend, close)
+h4_high   = f_htf(tf_trend, high)
+h4_low    = f_htf(tf_trend, low)
+h4_ema20  = f_htf(tf_trend, ta.ema(close, 20))
+h4_ema50  = f_htf(tf_trend, ta.ema(close, 50))
+h4_ema200 = f_htf(tf_trend, ta.ema(close, 200))
+h4_vwap   = f_htf(tf_trend, ta.vwap(hlc3))
+
+h4_bull      = h4_close > h4_ema20 and h4_ema20 > h4_ema50 and h4_ema50 > h4_ema200
+h4_bear      = h4_close < h4_ema20 and h4_ema20 < h4_ema50 and h4_ema50 < h4_ema200
+h4_HH        = h4_high > h4_high[1] and h4_high[1] > h4_high[2]
+h4_LL        = h4_low  < h4_low[1]  and h4_low[1]  < h4_low[2]
+h4_uptrend   = h4_bull and h4_HH and h4_close > h4_vwap
+h4_downtrend = h4_bear and h4_LL and h4_close < h4_vwap
+
+// ════════════════════════════════════════════════════════════
+//  1H TRADE
+// ════════════════════════════════════════════════════════════
+h1_close  = f_htf(tf_trade, close)
+h1_open   = f_htf(tf_trade, open)
+h1_high   = f_htf(tf_trade, high)
+h1_low    = f_htf(tf_trade, low)
+h1_vol    = f_htf(tf_trade, volume)
+h1_volMA  = f_htf(tf_trade, ta.sma(volume, volLen))
+h1_ema9   = f_htf(tf_trade, ta.ema(close, 9))
+h1_ema21  = f_htf(tf_trade, ta.ema(close, 21))
+h1_rsi    = f_htf(tf_trade, ta.rsi(close, 14))
+h1_vwap   = f_htf(tf_trade, ta.vwap(hlc3))
+
+h1_range   = math.max(h1_high - h1_low, 0.0001)
+h1_bullBar = h1_close > h1_open and (h1_close - h1_low) / h1_range > 0.66 and h1_vol > h1_volMA
+h1_bearBar = h1_close < h1_open and (h1_high - h1_close) / h1_range > 0.66 and h1_vol > h1_volMA
+h1_emaUp   = h1_ema9 > h1_ema21 and h1_close > h1_ema21 and h1_close > h1_vwap
+h1_emaDn   = h1_ema9 < h1_ema21 and h1_close < h1_ema21 and h1_close < h1_vwap
+h1_momUp   = h1_rsi > 50 and h1_rsi < 75
+h1_momDn   = h1_rsi < 50 and h1_rsi > 25
+
+// ════════════════════════════════════════════════════════════
+//  SESSION VWAP + BANDS  (resets each LSE day at 08:00)
+// ════════════════════════════════════════════════════════════
+vwap15  = ta.vwap(hlc3)
+vwapDev = math.sqrt(ta.sma(math.pow(hlc3 - vwap15, 2), 20))
+vwapU1  = vwap15 + vwapDev
+vwapL1  = vwap15 - vwapDev
+vwapU2  = vwap15 + vwapDev * 2
+vwapL2  = vwap15 - vwapDev * 2
+
+plot(showVWAP ? vwap15 : na, "VWAP",     color=C_VWAP,                linewidth=2)
+plot(showVWAP ? vwapU1 : na, "VWAP +1σ", color=color.new(C_VWAP, 55), linewidth=1)
+plot(showVWAP ? vwapL1 : na, "VWAP -1σ", color=color.new(C_VWAP, 55), linewidth=1)
+plot(showVWAP ? vwapU2 : na, "VWAP +2σ", color=color.new(C_VWAP, 78), linewidth=1)
+plot(showVWAP ? vwapL2 : na, "VWAP -2σ", color=color.new(C_VWAP, 78), linewidth=1)
+
+aboveVWAP = close > vwap15
+belowVWAP = close < vwap15
+
+// ════════════════════════════════════════════════════════════
+//  ANCHORED VWAP  (anchored to last swing high / low)
+// ════════════════════════════════════════════════════════════
+pivotHigh = ta.pivothigh(high, swingLen, swingLen)
+pivotLow  = ta.pivotlow(low,   swingLen, swingLen)
+
+var float avwap_sumPV_bull = 0.0
+var float avwap_sumV_bull  = 0.0
+var float avwap_sumPV_bear = 0.0
+var float avwap_sumV_bear  = 0.0
+
+if not na(pivotLow)
+    avwap_sumPV_bull := 0.0
+    avwap_sumV_bull  := 0.0
+
+if not na(pivotHigh)
+    avwap_sumPV_bear := 0.0
+    avwap_sumV_bear  := 0.0
+
+avwap_sumPV_bull := avwap_sumPV_bull + hlc3 * volume
+avwap_sumV_bull  := avwap_sumV_bull  + volume
+avwap_sumPV_bear := avwap_sumPV_bear + hlc3 * volume
+avwap_sumV_bear  := avwap_sumV_bear  + volume
+
+avwap_bull = avwap_sumV_bull > 0 ? avwap_sumPV_bull / avwap_sumV_bull : na
+avwap_bear = avwap_sumV_bear > 0 ? avwap_sumPV_bear / avwap_sumV_bear : na
+
+plot(showAVWAP ? avwap_bull : na, "AVWAP (Bull anchor)", color=color.new(C_BULL, 30), linewidth=1)
+plot(showAVWAP ? avwap_bear : na, "AVWAP (Bear anchor)", color=color.new(C_BEAR, 30), linewidth=1)
+
+aboveAVWAP = not na(avwap_bull) and close > avwap_bull
+belowAVWAP = not na(avwap_bear) and close < avwap_bear
+
+// ════════════════════════════════════════════════════════════
+//  SWING LEVELS
+// ════════════════════════════════════════════════════════════
+var float lastSwingHi = na
+var float lastSwingLo = na
+var line  swingHiLine = na
+var line  swingLoLine = na
+
+if not na(pivotHigh)
+    lastSwingHi := high[swingLen]
+    if not na(swingHiLine)
+        line.delete(swingHiLine)
+    if showSwing
+        swingHiLine := line.new(x1=bar_index - swingLen, y1=lastSwingHi, x2=bar_index, y2=lastSwingHi,
+          xloc=xloc.bar_index, extend=extend.right, color=color.new(C_GOLD, 45), width=1, style=line.style_dotted)
+
+if not na(pivotLow)
+    lastSwingLo := low[swingLen]
+    if not na(swingLoLine)
+        line.delete(swingLoLine)
+    if showSwing
+        swingLoLine := line.new(x1=bar_index - swingLen, y1=lastSwingLo, x2=bar_index, y2=lastSwingLo,
+          xloc=xloc.bar_index, extend=extend.right, color=color.new(C_GOLD, 45), width=1, style=line.style_dotted)
+
+// ════════════════════════════════════════════════════════════
+//  ATR + VOLUME
+//  NOTE: LSE stocks quoted in pence (GBX) have ATR values
+//  100× larger than their GBP equivalent — this is correct
+//  and requires no adjustment since ATR is always derived
+//  from the chart's native price scale.
+// ════════════════════════════════════════════════════════════
+atr15   = ta.atr(atrLen)
+volMA15 = ta.sma(volume, volLen)
+instVol = volume > volMA15 * volMult
+avgVol  = volume > volMA15
+
+slDist = atr15 * slMult
+tpDist = slDist * rrRatio
+
+// ════════════════════════════════════════════════════════════
+//  PREMIUM / DISCOUNT ZONES
+// ════════════════════════════════════════════════════════════
+rangeLen   = 50
+rangeHigh  = ta.highest(high, rangeLen)
+rangeLow   = ta.lowest(low,   rangeLen)
+rangeMid   = (rangeHigh + rangeLow) / 2
+inDiscount = close < rangeMid
+inPremium  = close > rangeMid
+
+// ════════════════════════════════════════════════════════════
+//  MARKET STRUCTURE  (BOS / CHoCH)
+// ════════════════════════════════════════════════════════════
+var float msBullSwingHi = na
+var float msBullSwingLo = na
+var float msBearSwingHi = na
+var float msBearSwingLo = na
+
+if not na(pivotHigh) and barstate.isconfirmed
+    msBearSwingHi := high[swingLen]
+if not na(pivotLow) and barstate.isconfirmed
+    msBullSwingLo := low[swingLen]
+
+bos_bull   = not na(msBearSwingHi) and close > msBearSwingHi and close[1] <= msBearSwingHi and h4_uptrend   and barstate.isconfirmed
+bos_bear   = not na(msBullSwingLo) and close < msBullSwingLo and close[1] >= msBullSwingLo and h4_downtrend and barstate.isconfirmed
+choch_bull = not na(msBullSwingLo) and close < msBullSwingLo and close[1] >= msBullSwingLo and h4_uptrend   and barstate.isconfirmed
+choch_bear = not na(msBearSwingHi) and close > msBearSwingHi and close[1] <= msBearSwingHi and h4_downtrend and barstate.isconfirmed
+
+if bos_bull and showMS and barstate.isconfirmed
+    label.new(bar_index, high + atr15 * 0.4, "BOS", style=label.style_none, textcolor=C_BOS, size=size.tiny)
+if bos_bear and showMS and barstate.isconfirmed
+    label.new(bar_index, low - atr15 * 0.4, "BOS", style=label.style_none, textcolor=C_BOS, size=size.tiny)
+if choch_bull and showMS and barstate.isconfirmed
+    label.new(bar_index, low - atr15 * 0.7, "CHoCH ⚠", style=label.style_none, textcolor=C_CHOCH, size=size.tiny)
+if choch_bear and showMS and barstate.isconfirmed
+    label.new(bar_index, high + atr15 * 0.7, "CHoCH ⚠", style=label.style_none, textcolor=C_CHOCH, size=size.tiny)
+
+// ════════════════════════════════════════════════════════════
+//  DISPLACEMENT  (Institutional signature candles)
+//  On LSE equities body > 2× ATR is a meaningful displacement
+//  threshold — same as original.
+// ════════════════════════════════════════════════════════════
+dispBody    = math.abs(close - open)
+dispBullBar = close > open and dispBody > atr15 * 2.0 and close > high[1] and barstate.isconfirmed
+dispBearBar = close < open and dispBody > atr15 * 2.0 and close < low[1]  and barstate.isconfirmed
+
+bgcolor(showDisp and dispBullBar ? C_DISP : na, title="Bull Displacement")
+bgcolor(showDisp and dispBearBar ? C_DISP : na, title="Bear Displacement")
+
+if dispBullBar and showDisp and barstate.isconfirmed
+    label.new(bar_index, low - atr15 * 0.8, "DISP↑", style=label.style_none, textcolor=C_GOLD, size=size.tiny)
+if dispBearBar and showDisp and barstate.isconfirmed
+    label.new(bar_index, high + atr15 * 0.8, "DISP↓", style=label.style_none, textcolor=C_GOLD, size=size.tiny)
+
+// ════════════════════════════════════════════════════════════
+//  LIQUIDITY POOLS
+// ════════════════════════════════════════════════════════════
+liqThresh    = atr15 * 0.15
+highestHigh  = ta.highest(high, liqLookbk)
+lowestLow    = ta.lowest(low,   liqLookbk)
+equalHighs   = math.abs(high - highestHigh) < liqThresh and high[1] > high[2] and high[1] > high[0]
+equalLows    = math.abs(low  - lowestLow)   < liqThresh and low[1]  < low[2]  and low[1]  < low[0]
+bullLiqSweep = low  < lowestLow[1]    and close > lowestLow[1]    and instVol
+bearLiqSweep = high > highestHigh[1]  and close < highestHigh[1]  and instVol
+
+if equalHighs and showLiq and barstate.isconfirmed
+    label.new(bar_index - 1, high[1] + atr15 * 0.3, "SSL", style=label.style_none, textcolor=color.new(C_BEAR, 20), size=size.tiny)
+if equalLows and showLiq and barstate.isconfirmed
+    label.new(bar_index - 1, low[1] - atr15 * 0.3, "BSL", style=label.style_none, textcolor=color.new(C_BULL, 20), size=size.tiny)
+if bullLiqSweep and showLiq and barstate.isconfirmed
+    label.new(bar_index, low - atr15 * 0.6, "SWEEP", style=label.style_none, textcolor=C_GOLD, size=size.tiny)
+if bearLiqSweep and showLiq and barstate.isconfirmed
+    label.new(bar_index, high + atr15 * 0.6, "SWEEP", style=label.style_none, textcolor=C_GOLD, size=size.tiny)
+
+// ════════════════════════════════════════════════════════════
+//  ORDER BLOCKS
+// ════════════════════════════════════════════════════════════
+isBullOB = close[1] < open[1] and close > open and close > high[1] and volume > volMA15 * obStrength and barstate.isconfirmed
+isBearOB = close[1] > open[1] and close < open and close < low[1]  and volume > volMA15 * obStrength and barstate.isconfirmed
+
+var float ob_bull_hi  = na
+var float ob_bull_lo  = na
+var float ob_bear_hi  = na
+var float ob_bear_lo  = na
+var box   ob_bull_box = na
+var box   ob_bear_box = na
+
+if isBullOB
+    ob_bull_hi := math.max(open[1], close[1])
+    ob_bull_lo := math.min(open[1], close[1])
+    if not na(ob_bull_box)
+        box.delete(ob_bull_box)
+    if showOB
+        ob_bull_box := box.new(left=bar_index - 1, top=ob_bull_hi, right=bar_index, bottom=ob_bull_lo,
+          xloc=xloc.bar_index, extend=extend.right, border_color=C_BULL, bgcolor=C_OB_B, border_width=1)
+
+if isBearOB
+    ob_bear_hi := math.max(open[1], close[1])
+    ob_bear_lo := math.min(open[1], close[1])
+    if not na(ob_bear_box)
+        box.delete(ob_bear_box)
+    if showOB
+        ob_bear_box := box.new(left=bar_index - 1, top=ob_bear_hi, right=bar_index, bottom=ob_bear_lo,
+          xloc=xloc.bar_index, extend=extend.right, border_color=C_BEAR, bgcolor=C_OB_S, border_width=1)
+
+inBullOB = not na(ob_bull_lo) and close >= ob_bull_lo and close <= ob_bull_hi
+inBearOB = not na(ob_bear_lo) and close >= ob_bear_lo and close <= ob_bear_hi
+
+// ════════════════════════════════════════════════════════════
+//  FAIR VALUE GAPS
+// ════════════════════════════════════════════════════════════
+bullFVG = low > high[2] and barstate.isconfirmed
+bearFVG = high < low[2]  and barstate.isconfirmed
+
+if bullFVG and showFVG
+    box.new(left=bar_index - 2, top=low, right=bar_index, bottom=high[2],
+      xloc=xloc.bar_index, extend=extend.none, border_color=color.new(C_BULL, 50), bgcolor=C_FVG_B, border_width=1)
+if bearFVG and showFVG
+    box.new(left=bar_index - 2, top=low[2], right=bar_index, bottom=high,
+      xloc=xloc.bar_index, extend=extend.none, border_color=color.new(C_BEAR, 50), bgcolor=C_FVG_S, border_width=1)
+
+// ════════════════════════════════════════════════════════════
+//  15M ENTRY
+// ════════════════════════════════════════════════════════════
+totalRange = math.max(high - low, 0.0001)
+bodyRatio  = math.abs(close - open) / totalRange
+bull15     = close > open and bodyRatio > 0.6 and (close - low)   / totalRange > 0.6 and avgVol
+bear15     = close < open and bodyRatio > 0.6 and (high - close)  / totalRange > 0.6 and avgVol
+bullEngulf = close > open and close > high[1] and open < low[1]   and avgVol
+bearEngulf = close < open and close < low[1]  and open > high[1]  and avgVol
+
+ema9_15  = ta.ema(close, 9)
+ema21_15 = ta.ema(close, 21)
+ema50_15 = ta.ema(close, 50)
+ema15Up  = ema9_15 > ema21_15 and ema21_15 > ema50_15
+ema15Dn  = ema9_15 < ema21_15 and ema21_15 < ema50_15
+
+rsi15    = ta.rsi(close, 14)
+rsi15Up  = rsi15 > 50 and rsi15 < 72
+rsi15Dn  = rsi15 < 50 and rsi15 > 28
+
+macdLine = ta.ema(close, 12) - ta.ema(close, 26)
+signLine = ta.ema(macdLine, 9)
+macdHist = macdLine - signLine
+macd15Up = macdHist > 0 and macdHist > macdHist[1]
+macd15Dn = macdHist < 0 and macdHist < macdHist[1]
+
+// ════════════════════════════════════════════════════════════
+//  KILL ZONE BONUS LAYER
+//  Signals that occur inside a kill zone get an extra point.
+//  This rewards the highest-probability entry windows on LSE.
+// ════════════════════════════════════════════════════════════
+kzBonus = inAnyKillZone ? 1 : 0
+
+// ════════════════════════════════════════════════════════════
+//  SIGNAL SCORING  (8 core layers + 1 kill-zone bonus = 9 max)
+//  Score is still reported /8 for consistency; bonus is additive.
+// ════════════════════════════════════════════════════════════
+L1 = h4_uptrend ? 1 : 0
+L2 = h1_bullBar and h1_emaUp ? 1 : 0
+L3 = h1_momUp ? 1 : 0
+L4 = (bull15 or bullEngulf or bullLiqSweep) and ema15Up ? 1 : 0
+L5 = instVol and (macd15Up or rsi15Up) ? 1 : 0
+L6 = aboveVWAP and aboveAVWAP ? 1 : 0
+L7 = inBullOB or bullLiqSweep ? 1 : 0
+L8 = inDiscount ? 1 : 0
+// Kill-zone bonus counted separately so base score stays /8
+longScore  = L1 + L2 + L3 + L4 + L5 + L6 + L7 + L8
+longScoreKZ = longScore + kzBonus   // used for threshold check only
+
+S1 = h4_downtrend ? 1 : 0
+S2 = h1_bearBar and h1_emaDn ? 1 : 0
+S3 = h1_momDn ? 1 : 0
+S4 = (bear15 or bearEngulf or bearLiqSweep) and ema15Dn ? 1 : 0
+S5 = instVol and (macd15Dn or rsi15Dn) ? 1 : 0
+S6 = belowVWAP and belowAVWAP ? 1 : 0
+S7 = inBearOB or bearLiqSweep ? 1 : 0
+S8 = inPremium ? 1 : 0
+shortScore  = S1 + S2 + S3 + S4 + S5 + S6 + S7 + S8
+shortScoreKZ = shortScore + kzBonus
+
+// ════════════════════════════════════════════════════════════
+//  FINAL SIGNALS
+//  Apply session filter: outside LSE hours → no new signals
+// ════════════════════════════════════════════════════════════
+sessionGate = filterSession ? inLSE_Hours : true
+
+longRaw  = longScoreKZ  >= minScore and barstate.isconfirmed and sessionGate
+shortRaw = shortScoreKZ >= minScore and barstate.isconfirmed and sessionGate
+
+var int lastSig = 0
+longSignal  = longRaw  and lastSig != 1
+shortSignal = shortRaw and lastSig != -1
+
+if longSignal
+    lastSig := 1
+if shortSignal
+    lastSig := -1
+
+// ════════════════════════════════════════════════════════════
+//  TRAILING STOP ENGINE
+// ════════════════════════════════════════════════════════════
+var float trailStop   = na
+var float trailEntry  = na
+var int   trailDir    = 0
+var bool  trailActive = false
+var bool  trailHit    = false
+
+trailDist = atr15 * trailAtrMult
+
+if longSignal
+    trailEntry  := close
+    trailStop   := close - slDist
+    trailDir    := 1
+    trailActive := false
+    trailHit    := false
+
+if shortSignal
+    trailEntry  := close
+    trailStop   := close + slDist
+    trailDir    := -1
+    trailActive := false
+    trailHit    := false
+
+if trailDir == 1 and not na(trailEntry)
+    if close >= trailEntry + atr15 * trailActivation
+        trailActive := true
+    if trailActive
+        trailStop := math.max(trailStop, high - trailDist)
+    if low <= trailStop
+        trailHit  := true
+        trailDir  := 0
+        trailEntry := na
+
+if trailDir == -1 and not na(trailEntry)
+    if close <= trailEntry - atr15 * trailActivation
+        trailActive := true
+    if trailActive
+        trailStop := math.min(trailStop, low + trailDist)
+    if high >= trailStop
+        trailHit  := true
+        trailDir  := 0
+        trailEntry := na
+
+plot(showTrail and trailDir != 0 ? trailStop : na, "Trail Stop",
+  color=trailActive ? C_TRAIL : color.new(C_TRAIL, 60), linewidth=2, style=plot.style_stepline)
+
+// ════════════════════════════════════════════════════════════
+//  TP / SL LINES
+// ════════════════════════════════════════════════════════════
+var line tp_line    = na
+var line sl_line    = na
+var line entry_line = na
+
+if (longSignal or shortSignal) and showTPSL
+    if not na(tp_line)
+        line.delete(tp_line)
+    if not na(sl_line)
+        line.delete(sl_line)
+    if not na(entry_line)
+        line.delete(entry_line)
+    tp_val     = longSignal ? close + tpDist : close - tpDist
+    sl_val     = longSignal ? close - slDist : close + slDist
+    tp_line    := line.new(x1=bar_index, y1=tp_val, x2=bar_index + 1, y2=tp_val,
+      xloc=xloc.bar_index, extend=extend.right, color=color.new(C_BULL, 0), width=2, style=line.style_dashed)
+    sl_line    := line.new(x1=bar_index, y1=sl_val, x2=bar_index + 1, y2=sl_val,
+      xloc=xloc.bar_index, extend=extend.right, color=color.new(C_BEAR, 0), width=2, style=line.style_dashed)
+    entry_line := line.new(x1=bar_index, y1=close,  x2=bar_index + 1, y2=close,
+      xloc=xloc.bar_index, extend=extend.right, color=color.new(C_GOLD, 0), width=1, style=line.style_dotted)
+
+// ════════════════════════════════════════════════════════════
+//  STORE LAST SIGNAL LEVELS
+// ════════════════════════════════════════════════════════════
+var float lastEntry = na
+var float lastTP    = na
+var float lastSL    = na
+var int   lastDir   = 0
+
+if longSignal
+    lastEntry := close
+    lastSL    := close - slDist
+    lastTP    := close + tpDist
+    lastDir   := 1
+
+if shortSignal
+    lastEntry := close
+    lastSL    := close + slDist
+    lastTP    := close - tpDist
+    lastDir   := -1
+
+// ════════════════════════════════════════════════════════════
+//  SIGNAL LABELS
+//  Currency unit shown dynamically: GBX for pence-quoted LSE
+//  stocks (most FTSE stocks), GBP/USD/EUR for others.
+// ════════════════════════════════════════════════════════════
+scoreTag(s) => s >= 7 ? "[S+]" : s == 5 or s == 6 ? "[A+]" : s == 4 ? "[A]" : "[B]"
+kzTag = inAnyKillZone ? " ⚡KZ" : ""   // kill-zone badge on signal label
+
+if longSignal and barstate.isconfirmed
+    label.new(bar_index, low - atr15 * 1.5,
+      "▲ LONG " + scoreTag(longScore) + "  " + str.tostring(longScore) + "/8" + kzTag + "\n" +
+      "Entry  : " + str.tostring(math.round(close, 2))           + "\n" +
+      "SL     : " + str.tostring(math.round(close - slDist, 2))  + "\n" +
+      "TP     : " + str.tostring(math.round(close + tpDist, 2))  + "\n" +
+      "Trail  : ATR×" + str.tostring(trailAtrMult) + " | Act@+" + str.tostring(trailActivation) + "ATR",
+      style=label.style_label_up, color=color.new(#0d47a1, 0), textcolor=color.white, size=size.small)
+
+if shortSignal and barstate.isconfirmed
+    label.new(bar_index, high + atr15 * 1.5,
+      "▼ SHORT " + scoreTag(shortScore) + "  " + str.tostring(shortScore) + "/8" + kzTag + "\n" +
+      "Entry  : " + str.tostring(math.round(close, 2))           + "\n" +
+      "SL     : " + str.tostring(math.round(close + slDist, 2))  + "\n" +
+      "TP     : " + str.tostring(math.round(close - tpDist, 2))  + "\n" +
+      "Trail  : ATR×" + str.tostring(trailAtrMult) + " | Act@-" + str.tostring(trailActivation) + "ATR",
+      style=label.style_label_down, color=color.new(#b71c1c, 0), textcolor=color.white, size=size.small)
+
+// ════════════════════════════════════════════════════════════
+//  EMA PLOTS + BACKGROUND
+// ════════════════════════════════════════════════════════════
+plot(ema9_15,  "EMA 9",  color=color.new(#29b6f6, 0), linewidth=1)
+plot(ema21_15, "EMA 21", color=color.new(#ce93d8, 0), linewidth=1)
+plot(ema50_15, "EMA 50", color=color.new(C_GOLD,  0), linewidth=2)
+
+bgcolor(h4_uptrend ? color.new(C_BULL, 97) : h4_downtrend ? color.new(C_BEAR, 97) : na, title="4H Trend Background")
+
+// ════════════════════════════════════════════════════════════
+//  HELPER FUNCTIONS
+// ════════════════════════════════════════════════════════════
+yesNo(v)    => v ? "YES" : "NO"
+yesClr(v)   => v ? C_BULL : color.new(C_BEAR, 30)
+gradeClr(s) => s >= 7 ? C_GOLD : s >= 5 ? C_BULL : s >= 3 ? C_BEAR : C_GRAY
+
+// ════════════════════════════════════════════════════════════
+//  DASHBOARD VARIABLES
+// ════════════════════════════════════════════════════════════
+sigTxt   = longSignal  ? "▲ LONG"  : shortSignal ? "▼ SHORT" : "— WAIT"
+sigClr   = longSignal  ? C_BULL    : shortSignal  ? C_BEAR    : C_GRAY
+volPct   = str.tostring(math.round(volume / volMA15 * 100)) + "%"
+volTxt   = instVol ? "INSTITUTIONAL" : avgVol ? "ABOVE AVG" : "LOW"
+volClr   = instVol ? C_GOLD : avgVol ? C_BULL : C_GRAY
+vwapDist = str.tostring(math.round(math.abs(close - vwap15) / atr15 * 10) / 10) + "x ATR"
+liqTxt   = bullLiqSweep ? "BULL SWEEP" : bearLiqSweep ? "BEAR SWEEP" : equalHighs ? "SELL LIQ" : equalLows ? "BUY LIQ" : "—"
+liqClr   = bullLiqSweep ? C_BULL : bearLiqSweep ? C_BEAR : C_GRAY
+l15e     = (bull15 or bullEngulf or bullLiqSweep) and ema15Up
+s15e     = (bear15 or bearEngulf or bearLiqSweep) and ema15Dn
+lvm      = instVol and (macd15Up or rsi15Up)
+svm      = instVol and (macd15Dn or rsi15Dn)
+
+// Kill zone label with distinct text per window
+kzTxt  = inLSE_Open  ? "LSE OPEN"    : inLSE_US    ? "US OVERLAP" : inLSE_Close ? "LSE CLOSE"  : "OFF"
+kzClr  = inLSE_Open  ? #42a5f5       : inLSE_US    ? #26c6da      : inLSE_Close ? #ce93d8      : C_GRAY
+
+pdTxt_l = inDiscount ? "DISCOUNT ✓" : "PREMIUM ✗"
+pdTxt_s = inPremium  ? "PREMIUM ✓"  : "DISCOUNT ✗"
+pdClr_l = inDiscount ? C_BULL : color.new(C_BEAR, 30)
+pdClr_s = inPremium  ? C_BULL : color.new(C_BEAR, 30)
+msTxt_l = bos_bull  ? "BOS ▲" : choch_bull ? "CHoCH ⚠" : "—"
+msTxt_s = bos_bear  ? "BOS ▼" : choch_bear ? "CHoCH ⚠" : "—"
+msClr_l = bos_bull  ? C_BOS  : choch_bull  ? C_CHOCH   : C_GRAY
+msClr_s = bos_bear  ? C_BOS  : choch_bear  ? C_CHOCH   : C_GRAY
+
+trailTxt = trailDir != 0 and not na(trailStop) ?
+  (trailActive ? "ACTIVE " : "ARMED  ") + str.tostring(math.round(trailStop, 2)) : "—"
+trailClr = trailActive ? C_TRAIL : trailDir != 0 ? color.new(C_TRAIL, 50) : C_GRAY
+
+sessTxt = inLSE_Hours ? "OPEN" : "CLOSED"
+sessClr = inLSE_Hours ? C_BULL : C_GRAY
+
+// Currency unit detection for dashboard display
+currencyUnit = syminfo.currency == "GBP" and close > 200 ? "GBX" : syminfo.currency
+
+// ════════════════════════════════════════════════════════════
+//  MAIN DASHBOARD  (top right)
+// ════════════════════════════════════════════════════════════
+if showDash and barstate.islast
+    var table dash = table.new(position.top_right, 3, 19,
+      bgcolor=color.new(#060612, 5), border_color=color.new(#1a2a3a, 0),
+      border_width=1, frame_color=#1a2a3a, frame_width=2)
+
+    // Header
+    table.cell(dash, 0, 0, "INSTITUTIONAL FLOW v3",   text_color=C_GOLD,  text_size=size.small, bgcolor=color.new(#0d1b2a, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 0, "LSE  |  MTF",             text_color=C_WHITE, text_size=size.small, bgcolor=color.new(#0d1b2a, 0), text_halign=text.align_center)
+    table.cell(dash, 2, 0, timeframe.period + "M",    text_color=C_GRAY,  text_size=size.tiny,  bgcolor=color.new(#0d1b2a, 0))
+    // Column labels
+    table.cell(dash, 0, 1, "LAYER",  text_color=C_GRAY, text_size=size.tiny, bgcolor=color.new(#111122, 0))
+    table.cell(dash, 1, 1, "LONG",   text_color=C_BULL, text_size=size.tiny, bgcolor=color.new(#111122, 0))
+    table.cell(dash, 2, 1, "SHORT",  text_color=C_BEAR, text_size=size.tiny, bgcolor=color.new(#111122, 0))
+
+    table.cell(dash, 0, 2,  "4H Trend",         text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 2,  yesNo(h4_uptrend),   text_color=yesClr(h4_uptrend),   text_size=size.tiny)
+    table.cell(dash, 2, 2,  yesNo(h4_downtrend), text_color=yesClr(h4_downtrend), text_size=size.tiny)
+
+    table.cell(dash, 0, 3,  "1H Structure",      text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 3,  yesNo(h1_bullBar and h1_emaUp), text_color=yesClr(h1_bullBar and h1_emaUp), text_size=size.tiny)
+    table.cell(dash, 2, 3,  yesNo(h1_bearBar and h1_emaDn), text_color=yesClr(h1_bearBar and h1_emaDn), text_size=size.tiny)
+
+    table.cell(dash, 0, 4,  "1H Momentum",       text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 4,  yesNo(h1_momUp), text_color=yesClr(h1_momUp), text_size=size.tiny)
+    table.cell(dash, 2, 4,  yesNo(h1_momDn), text_color=yesClr(h1_momDn), text_size=size.tiny)
+
+    table.cell(dash, 0, 5,  "15M Entry",         text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 5,  yesNo(l15e), text_color=yesClr(l15e), text_size=size.tiny)
+    table.cell(dash, 2, 5,  yesNo(s15e), text_color=yesClr(s15e), text_size=size.tiny)
+
+    table.cell(dash, 0, 6,  "Vol + Mom",         text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 6,  yesNo(lvm), text_color=yesClr(lvm), text_size=size.tiny)
+    table.cell(dash, 2, 6,  yesNo(svm), text_color=yesClr(svm), text_size=size.tiny)
+
+    table.cell(dash, 0, 7,  "VWAP",              text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 7,  yesNo(aboveVWAP and aboveAVWAP), text_color=yesClr(aboveVWAP and aboveAVWAP), text_size=size.tiny)
+    table.cell(dash, 2, 7,  yesNo(belowVWAP and belowAVWAP), text_color=yesClr(belowVWAP and belowAVWAP), text_size=size.tiny)
+
+    table.cell(dash, 0, 8,  "OB / Liq",          text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 8,  yesNo(inBullOB or bullLiqSweep), text_color=yesClr(inBullOB or bullLiqSweep), text_size=size.tiny)
+    table.cell(dash, 2, 8,  yesNo(inBearOB or bearLiqSweep), text_color=yesClr(inBearOB or bearLiqSweep), text_size=size.tiny)
+
+    table.cell(dash, 0, 9,  "Premium/Disc",      text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 9,  pdTxt_l, text_color=pdClr_l, text_size=size.tiny)
+    table.cell(dash, 2, 9,  pdTxt_s, text_color=pdClr_s, text_size=size.tiny)
+
+    table.cell(dash, 0, 10, "Mkt Structure",     text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 10, msTxt_l, text_color=msClr_l, text_size=size.tiny)
+    table.cell(dash, 2, 10, msTxt_s, text_color=msClr_s, text_size=size.tiny)
+
+    // LSE-specific rows
+    table.cell(dash, 0, 11, "Kill Zone",         text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 11, kzTxt,  text_color=kzClr,  text_size=size.tiny)
+    table.cell(dash, 2, 11, inAnyKillZone ? "⚡ ACTIVE" : "—", text_color=inAnyKillZone ? C_GOLD : C_GRAY, text_size=size.tiny)
+
+    table.cell(dash, 0, 12, "LSE Session",       text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 12, sessTxt,              text_color=sessClr, text_size=size.tiny)
+    table.cell(dash, 2, 12, currencyUnit,         text_color=C_GRAY,  text_size=size.tiny)
+
+    // Score
+    table.cell(dash, 0, 13, "SCORE /8",          text_color=C_GOLD,  text_size=size.small, bgcolor=color.new(#0d1b2a, 0))
+    table.cell(dash, 1, 13, str.tostring(longScore)  + " / 8" + (kzBonus == 1 ? " +KZ" : ""),
+      text_color=gradeClr(longScore),  text_size=size.small, bgcolor=color.new(#0d1b2a, 0))
+    table.cell(dash, 2, 13, str.tostring(shortScore) + " / 8" + (kzBonus == 1 ? " +KZ" : ""),
+      text_color=gradeClr(shortScore), text_size=size.small, bgcolor=color.new(#0d1b2a, 0))
+
+    table.cell(dash, 0, 14, "SIGNAL",            text_color=C_GOLD,  text_size=size.small)
+    table.cell(dash, 1, 14, sigTxt,               text_color=sigClr,  text_size=size.small)
+    table.cell(dash, 2, 14, "min: " + str.tostring(minScore), text_color=C_GRAY, text_size=size.tiny)
+
+    table.cell(dash, 0, 15, "Trail Stop",        text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 15, trailTxt,             text_color=trailClr, text_size=size.tiny)
+    table.cell(dash, 2, 15, trailDir == 1 ? "LONG" : trailDir == -1 ? "SHORT" : "—",
+      text_color=trailDir == 1 ? C_BULL : trailDir == -1 ? C_BEAR : C_GRAY, text_size=size.tiny)
+
+    table.cell(dash, 0, 16, "VWAP dist",         text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 16, aboveVWAP ? "ABOVE" : "BELOW", text_color=aboveVWAP ? C_BULL : C_BEAR, text_size=size.tiny)
+    table.cell(dash, 2, 16, vwapDist,             text_color=C_GRAY,  text_size=size.tiny)
+
+    table.cell(dash, 0, 17, "Liquidity",         text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 17, liqTxt,               text_color=liqClr,  text_size=size.tiny)
+    table.cell(dash, 2, 17, volPct,                text_color=volClr,  text_size=size.tiny)
+
+    table.cell(dash, 0, 18, "Ticker",            text_color=C_WHITE, text_size=size.tiny)
+    table.cell(dash, 1, 18, syminfo.ticker,       text_color=C_GOLD,  text_size=size.tiny)
+    table.cell(dash, 2, 18, syminfo.type,         text_color=C_GRAY,  text_size=size.tiny)
+
+// ════════════════════════════════════════════════════════════
+//  TRADE LEVELS BOX  (bottom right)
+// ════════════════════════════════════════════════════════════
+if showLvlBox and barstate.islast and not na(lastEntry)
+    var table lvl = table.new(position.bottom_right, 2, 9,
+      bgcolor=color.new(#060612, 5), border_color=color.new(#1a2a3a, 0),
+      border_width=1, frame_color=#1a2a3a, frame_width=2)
+    dirTxt   = lastDir == 1 ? "▲  LONG" : "▼  SHORT"
+    dirClr   = lastDir == 1 ? C_BULL : C_BEAR
+    slPts    = str.tostring(math.round(math.abs(lastEntry - lastSL), 2))
+    tpPts    = str.tostring(math.round(math.abs(lastTP - lastEntry), 2))
+    rrTxt    = "1 : " + str.tostring(rrRatio)
+    atrTxt   = str.tostring(math.round(atr15, 2)) + " " + currencyUnit
+    trailLvl = trailDir != 0 and not na(trailStop) ? str.tostring(math.round(trailStop, 2)) : "—"
+    trailSt  = trailActive ? "TRAILING" : trailDir != 0 ? "ARMED" : "—"
+
+    table.cell(lvl, 0, 0, "LAST SIGNAL LEVELS",  text_color=C_GOLD,  text_size=size.small, bgcolor=color.new(#0d1b2a, 0), text_halign=text.align_center)
+    table.cell(lvl, 1, 0, dirTxt,                text_color=dirClr,  text_size=size.small, bgcolor=color.new(#0d1b2a, 0))
+    table.cell(lvl, 0, 1, "Entry",               text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 1, str.tostring(math.round(lastEntry, 2)), text_color=C_GOLD,  text_size=size.small)
+    table.cell(lvl, 0, 2, "Stop Loss",           text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 2, str.tostring(math.round(lastSL, 2)) + "  (-" + slPts + ")", text_color=C_BEAR, text_size=size.small)
+    table.cell(lvl, 0, 3, "Take Profit",         text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 3, str.tostring(math.round(lastTP, 2)) + "  (+" + tpPts + ")", text_color=C_BULL, text_size=size.small)
+    table.cell(lvl, 0, 4, "Trail Stop",          text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 4, trailLvl,               text_color=C_TRAIL, text_size=size.small)
+    table.cell(lvl, 0, 5, "Trail Status",        text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 5, trailSt,                text_color=trailClr, text_size=size.tiny)
+    table.cell(lvl, 0, 6, "R:R",                 text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 6, rrTxt,                  text_color=C_WHITE, text_size=size.tiny)
+    table.cell(lvl, 0, 7, "ATR",                 text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 7, atrTxt,                 text_color=C_WHITE, text_size=size.tiny)
+    table.cell(lvl, 0, 8, "Score",               text_color=C_GRAY,  text_size=size.tiny)
+    table.cell(lvl, 1, 8, str.tostring(lastDir == 1 ? longScore : shortScore) + " / 8", text_color=C_GOLD, text_size=size.tiny)
+
+// ════════════════════════════════════════════════════════════
+//  ALERTS
+// ════════════════════════════════════════════════════════════
+alertcondition(longSignal,                 "IF·LSE LONG",          "LONG signal — {{ticker}} {{interval}}")
+alertcondition(shortSignal,                "IF·LSE SHORT",         "SHORT signal — {{ticker}} {{interval}}")
+alertcondition(longSignal or shortSignal,  "IF·LSE Any Signal",    "Signal — {{ticker}} {{interval}}")
+alertcondition(longSignal and inAnyKillZone,  "IF·LSE KZ LONG",   "Kill Zone LONG — {{ticker}}")
+alertcondition(shortSignal and inAnyKillZone, "IF·LSE KZ SHORT",  "Kill Zone SHORT — {{ticker}}")
+alertcondition(bullLiqSweep,               "IF·LSE Bull Sweep",    "Bull liquidity sweep — {{ticker}}")
+alertcondition(bearLiqSweep,               "IF·LSE Bear Sweep",    "Bear liquidity sweep — {{ticker}}")
+alertcondition(bos_bull,                   "IF·LSE BOS Bull",      "Bullish BOS — {{ticker}}")
+alertcondition(bos_bear,                   "IF·LSE BOS Bear",      "Bearish BOS — {{ticker}}")
+alertcondition(choch_bull or choch_bear,   "IF·LSE CHoCH",         "Change of Character — {{ticker}}")
+alertcondition(trailHit,                   "IF·LSE Trail Hit",     "Trail stop hit — {{ticker}}")
+alertcondition(dispBullBar or dispBearBar, "IF·LSE Displacement",  "Institutional displacement — {{ticker}}")
+alertcondition(inLSE_Open  and not inLSE_Open[1],  "IF·LSE Open KZ Start",    "LSE Open Kill Zone started — {{ticker}}")
+alertcondition(inLSE_US    and not inLSE_US[1],    "IF·LSE US Overlap Start", "US Overlap Kill Zone started — {{ticker}}")
+alertcondition(inLSE_Close and not inLSE_Close[1], "IF·LSE Close KZ Start",   "LSE Close Kill Zone started — {{ticker}}")
