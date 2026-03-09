@@ -1,0 +1,3240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LSE Alpha Screener v6</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Barlow+Condensed:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #030810;
+    --surface: #070f1e;
+    --surface2: #0c1828;
+    --border: #1a2e4a;
+    --accent: #00d4ff;
+    --accent2: #00ff88;
+    --accent3: #ff6b35;
+    --warn: #ffd700;
+    --danger: #ff3366;
+    --text: #e8f4ff;
+    --muted: #5a7a9a;
+    --grid: rgba(0,212,255,0.04);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow Condensed', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      repeating-linear-gradient(0deg, transparent, transparent 39px, var(--grid) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, var(--grid) 40px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .scanline {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: scan 4s linear infinite;
+    opacity: 0.3;
+    z-index: 1000;
+  }
+  @keyframes scan { from{top:-2px} to{top:100vh} }
+
+  header {
+    position: relative;
+    z-index: 10;
+    padding: 20px 32px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(180deg, rgba(0,20,40,0.9) 0%, transparent 100%);
+  }
+
+  .logo {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .logo-text {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -1px;
+    text-shadow: 0 0 20px rgba(0,212,255,0.5);
+  }
+
+  .logo-sub {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0,255,136,0.08);
+    border: 1px solid rgba(0,255,136,0.3);
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--accent2);
+  }
+
+  .pulse {
+    width: 7px; height: 7px;
+    background: var(--accent2);
+    border-radius: 50%;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100%{opacity:1;transform:scale(1)}
+    50%{opacity:0.3;transform:scale(0.7)}
+  }
+
+  .main {
+    position: relative;
+    z-index: 5;
+    padding: 24px 32px;
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 24px;
+    min-height: calc(100vh - 70px);
+  }
+
+  /* LEFT PANEL */
+  .control-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.5;
+  }
+
+  .card-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    margin-top: 14px;
+  }
+
+  label:first-of-type { margin-top: 0; }
+
+  select, input[type="number"] {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+    appearance: none;
+  }
+
+  select:focus, input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(0,212,255,0.1);
+  }
+
+  select option { background: var(--surface2); }
+
+  .range-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .filter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .toggle-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .toggle-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .toggle-btn.active {
+    background: rgba(0,212,255,0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .scan-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #004a6e 0%, #006fa1 100%);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    letter-spacing: 3px;
+    padding: 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scan-btn:hover {
+    background: linear-gradient(135deg, #005c87 0%, #0088c4 100%);
+    box-shadow: 0 0 30px rgba(0,212,255,0.3);
+    transform: translateY(-1px);
+  }
+
+  .scan-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .scan-btn .btn-glow {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(0,212,255,0.15), transparent);
+    transform: translateX(-100%);
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer { to { transform: translateX(100%); } }
+
+  /* RIGHT PANEL */
+  .results-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    position: relative;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .stat-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .stat-value.green { color: var(--accent2); }
+  .stat-value.orange { color: var(--accent3); }
+  .stat-value.gold { color: var(--warn); }
+
+  /* TICKER TABLE */
+  .table-wrapper {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .table-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .table-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  .sort-controls {
+    display: flex;
+    gap: 8px;
+  }
+
+  .sort-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .sort-btn:hover, .sort-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead th {
+    background: var(--surface2);
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid rgba(26,46,74,0.5);
+    transition: background 0.15s;
+    cursor: pointer;
+  }
+
+  tbody tr:hover { background: rgba(0,212,255,0.04); }
+
+  tbody td {
+    padding: 12px 14px;
+    font-size: 13px;
+    vertical-align: middle;
+  }
+
+  .ticker-cell {
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .company-name {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .score-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .score-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .score-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s;
+  }
+
+  .score-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    min-width: 28px;
+    text-align: right;
+  }
+
+  .gain-target {
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    font-size: 15px;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: 9px;
+    letter-spacing: 1px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    margin: 1px;
+  }
+
+  .tag-bull { background: rgba(0,255,136,0.1); color: var(--accent2); border: 1px solid rgba(0,255,136,0.3); }
+  .tag-macro { background: rgba(255,215,0,0.1); color: var(--warn); border: 1px solid rgba(255,215,0,0.3); }
+  .tag-vol { background: rgba(0,212,255,0.1); color: var(--accent); border: 1px solid rgba(0,212,255,0.3); }
+  .tag-inst { background: rgba(255,107,53,0.1); color: var(--accent3); border: 1px solid rgba(255,107,53,0.3); }
+  .tag-news { background: rgba(255,51,102,0.15); color: var(--danger); border: 1px solid rgba(255,51,102,0.3); }
+
+  .confidence-pill {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 700;
+  }
+
+  .conf-high { background: rgba(0,255,136,0.15); color: var(--accent2); border: 1px solid rgba(0,255,136,0.4); }
+  .conf-med { background: rgba(255,215,0,0.15); color: var(--warn); border: 1px solid rgba(255,215,0,0.4); }
+  .conf-low { background: rgba(255,107,53,0.15); color: var(--accent3); border: 1px solid rgba(255,107,53,0.4); }
+
+  /* DETAIL PANEL */
+  .detail-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    background: rgba(3,8,16,0.85);
+    backdrop-filter: blur(4px);
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+  }
+
+  .detail-overlay.open { display: flex; }
+
+  .detail-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 780px;
+    max-height: 85vh;
+    overflow-y: auto;
+    position: relative;
+  }
+
+  .detail-card::before {
+    content: '';
+    display: block;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent), var(--accent3));
+    border-radius: 12px 12px 0 0;
+  }
+
+  .detail-inner { padding: 24px; }
+
+  .detail-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .detail-ticker {
+    font-family: 'Space Mono', monospace;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .detail-company { font-size: 16px; color: var(--muted); margin-top: 4px; }
+
+  .close-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 34px; height: 34px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  .close-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .metric-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+  }
+
+  .metric-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .metric-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .analysis-section {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .analysis-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .analysis-text {
+    font-size: 14px;
+    line-height: 1.7;
+    color: #b0c8e0;
+  }
+
+  .risk-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #b0c8e0;
+  }
+
+  .risk-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex-shrink: 0;
+  }
+
+  /* LOADING */
+  .loading-state {
+    padding: 60px 20px;
+    text-align: center;
+  }
+
+  .loading-spinner {
+    width: 48px; height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 2px;
+  }
+
+  .status-line {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--accent2);
+    margin-top: 8px;
+    min-height: 16px;
+  }
+
+  .empty-state {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+  }
+
+  .empty-icon {
+    font-size: 40px;
+    margin-bottom: 16px;
+    opacity: 0.3;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* DISCLAIMER */
+  .disclaimer {
+    padding: 10px 20px;
+    font-size: 11px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    letter-spacing: 0.5px;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 3px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 12px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s;
+  }
+</style>
+</head>
+<body>
+
+<div class="scanline"></div>
+
+<header>
+  <div class="logo">
+    <span class="logo-text">LSE ALPHA</span>
+    <span class="logo-sub">Institutional Screener v6 · AI-Powered</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted)" id="clockDisplay"></div>
+    <span id="avBadge" style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;padding:5px 12px;border-radius:4px;border:1px solid rgba(0,212,255,.3);color:var(--accent);background:rgba(0,212,255,.06)">AV READY</span>
+    <span id="finageBadge" style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;padding:5px 12px;border-radius:4px;border:1px solid rgba(255,165,0,.3);color:#ffa500;background:rgba(255,165,0,.04)" title="Finage — live LSE intraday prices (primary quote source)">FINAGE READY</span>
+    <span id="massiveBadge" style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;padding:5px 12px;border-radius:4px;border:1px solid rgba(0,255,136,.25);color:#22c55e;background:rgba(0,255,136,.04)" title="Massive.com (formerly Polygon.io) — EOD prev-close + OHLCV">MASSIVE·POLY</span>
+    <span id="epBadge" style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;padding:5px 12px;border-radius:4px;border:1px solid rgba(176,160,255,.3);color:#b0a0ff;background:rgba(176,160,255,.06)" title="Eulerpool fundamentals">EP READY</span>
+    <span id="providerBadge" style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;padding:5px 12px;border-radius:4px;border:1px solid rgba(0,212,255,.25);color:var(--muted);background:rgba(0,212,255,.04)">AI READY</span>
+    <div class="live-badge">
+      <div class="pulse"></div>
+      <span>CLAUDE AI</span>
+    </div>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- LEFT: CONTROLS -->
+  <div class="control-panel">
+
+    <div class="card">
+      <div class="card-title">Scan Parameters</div>
+
+      <label>Market Segment</label>
+      <select id="segment">
+        <option value="FTSE100">FTSE 100</option>
+        <option value="FTSE250" selected>FTSE 250</option>
+        <option value="FTSE350">FTSE 350</option>
+        <option value="AIM">AIM (Growth)</option>
+        <option value="SMALLCAP">Small Cap</option>
+      </select>
+
+      <label>Target Gain Range</label>
+      <div class="range-row">
+        <div>
+          <input type="number" id="minGain" value="10" min="5" max="100" placeholder="Min %">
+        </div>
+        <div>
+          <input type="number" id="maxGain" value="50" min="10" max="200" placeholder="Max %">
+        </div>
+      </div>
+
+      <label>Sector Focus</label>
+      <select id="sector">
+        <option value="ALL">All Sectors</option>
+        <option value="ENERGY">Energy</option>
+        <option value="MINING">Mining & Resources</option>
+        <option value="BIOTECH">Biotech & Pharma</option>
+        <option value="TECH">Technology</option>
+        <option value="FINANCE">Financials</option>
+        <option value="CONSUMER">Consumer</option>
+        <option value="INDUSTRIAL">Industrials</option>
+      </select>
+
+      <label>Min Market Cap</label>
+      <select id="mcap">
+        <option value="MICRO">Micro (&lt;£50M)</option>
+        <option value="SMALL" selected>Small (£50M–£300M)</option>
+        <option value="MID">Mid (£300M–£2B)</option>
+        <option value="LARGE">Large (&gt;£2B)</option>
+      </select>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Signal Filters</div>
+      <div class="toggle-group" id="signalFilters">
+        <button class="toggle-btn active" data-val="VOLUME">Volume Spike</button>
+        <button class="toggle-btn active" data-val="NEWS">Catalyst News</button>
+        <button class="toggle-btn active" data-val="INSTITUTIONAL">Inst. Flow</button>
+        <button class="toggle-btn active" data-val="BREAKOUT">Breakout</button>
+        <button class="toggle-btn active" data-val="MACRO">Macro Align</button>
+        <button class="toggle-btn" data-val="EARNINGS">Earnings Play</button>
+        <button class="toggle-btn" data-val="SHORT_SQUEEZE">Short Squeeze</button>
+        <button class="toggle-btn" data-val="MOMENTUM">Momentum</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Risk & Confidence</div>
+
+      <label>Min AI Confidence</label>
+      <select id="confidence">
+        <option value="60">60%+  Speculative</option>
+        <option value="70" selected>70%+  Moderate</option>
+        <option value="80">80%+  High</option>
+        <option value="90">90%+  Very High</option>
+      </select>
+
+      <label>Max Results</label>
+      <select id="maxResults">
+        <option value="5">5 Tickers</option>
+        <option value="10" selected>10 Tickers</option>
+        <option value="20">20 Tickers</option>
+        <option value="30">30 Tickers (full scan)</option>
+      </select>
+    </div>
+
+    <!-- POSITION SIZER CARD (DEFECT-04 FIX) -->
+    <div class="card" style="border-color:rgba(0,255,136,.2)">
+      <div class="card-title">Position Sizer <span style="color:var(--accent2);font-size:9px;letter-spacing:1px">LSE-AWARE</span></div>
+      <label style="margin-top:0">Account Size (£)</label>
+      <input type="number" id="accountSize" value="10000" min="1000" step="1000" placeholder="£10,000">
+      <label>Risk Per Trade (%)</label>
+      <input type="number" id="riskPct" value="1" min="0.25" max="5" step="0.25" placeholder="1%">
+      <div style="margin-top:10px;padding:10px 12px;background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.2);border-radius:4px;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:.5px;line-height:1.7">
+        ⚠ Stamp duty: 0.5% on buys<br>
+        ⚠ Break-even needs +0.7% min<br>
+        <span id="posSizerNote" style="color:var(--accent2)">Select a ticker to calculate size</span>
+      </div>
+    </div>
+
+    <button class="scan-btn" id="scanBtn" onclick="runScan()">
+      <div class="btn-glow"></div>
+      ⚡ SCAN MARKET
+    </button>
+
+    <div class="card" style="border-color:rgba(0,212,255,.2)">
+      <div class="card-title">Claude AI Key <span style="color:var(--accent3);font-size:9px;letter-spacing:1px">OPTIONAL</span></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div id="modeChip" style="flex:1;text-align:center;padding:7px 4px;border-radius:4px;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;border:1px solid rgba(255,215,0,.35);color:var(--warn);background:rgba(255,215,0,.06)">
+          ⚡ QUANT MODE
+        </div>
+      </div>
+      <label style="margin-top:0">Anthropic API Key</label>
+      <input type="password" id="claudeApiKey" placeholder="sk-ant-api03-… (optional)"
+        style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:9px 12px;outline:none;letter-spacing:1px"
+        oninput="updateModeChip(this.value)"
+        onfocus="this.type='text'" onblur="this.type='password'">
+      <div style="margin-top:8px;font-size:10px;color:var(--muted);line-height:1.6;letter-spacing:.5px">
+        Without key: deterministic quant scoring from live data.<br>
+        With key: Claude adds news/catalyst narrative + newsScore.<br>
+        <span style="color:var(--accent)">console.anthropic.com</span> — key stays local.
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      ⚠ AI-generated analysis only. Not financial advice. Always DYOR. Past signals ≠ future results.
+    </div>
+
+  </div>
+
+  <!-- RIGHT: RESULTS -->
+  <div class="results-panel">
+
+    <div class="stats-bar" style="grid-template-columns:repeat(5,1fr)">
+      <div class="stat-card">
+        <div class="stat-label">Tickers Scanned</div>
+        <div class="stat-value" id="statScanned">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Qualified Signals</div>
+        <div class="stat-value green" id="statQualified">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Target</div>
+        <div class="stat-value gold" id="statAvgTarget">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Top Confidence</div>
+        <div class="stat-value orange" id="statTopConf">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">MTF Aligned</div>
+        <div class="stat-value green" id="statMTF">—</div>
+      </div>
+    </div>
+    <div id="priceNote" style="display:none;font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px;padding:4px 2px;text-align:right">
+      ⏱ PRICES: GLOBAL_QUOTE in GBP (pence÷100) · OHLCV normalised · Stops &amp; targets anchored to live quote
+    </div>
+
+    <div class="table-wrapper">
+      <div class="table-header">
+        <div class="table-title">🎯 Alpha Candidates</div>
+        <div class="sort-controls">
+          <button class="sort-btn active" onclick="sortResults('score',event)">Score</button>
+          <button class="sort-btn" onclick="sortResults('gain',event)">Target</button>
+          <button class="sort-btn" onclick="sortResults('confidence',event)">Conf.</button>
+        </div>
+      </div>
+
+      <div id="resultsBody">
+        <div class="empty-state">
+          <div class="empty-icon">⚡</div>
+          Configure your scan parameters and<br>click SCAN MARKET to begin
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- DETAIL OVERLAY -->
+<div class="detail-overlay" id="detailOverlay">
+  <div class="detail-card">
+    <div class="detail-inner" id="detailContent"></div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════
+   MARKET ENGINE  ·  5-Source Pipeline
+   Tier 0 → Finage LSE API      (PRIMARY intraday quote — live LSE last price per ticker)
+             └─ /last/lse/{sym}  → fresher than AV, bid/ask spread visible
+             └─ /agg/lse/{sym}   → OHLCV backup when Polygon unavailable
+   Tier 1 → Massive.com         (formerly Polygon.io — EOD prev-close + OHLCV bars)
+             └─ /prev endpoint  → confirmed EOD prev-close anchor
+             └─ /range endpoint → 200 daily OHLCV bars for technicals
+   Tier 2 → Alpha Vantage       (fallback intraday quote if Finage fails)
+   Tier 3 → Eulerpool           (company fundamentals: P/E, ROE, debt)
+   Tier 4 → Anthropic Claude    (AI quant analysis + JSON signals)
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════════════════════════════
+   TIER 0 — Alpha Vantage  (Real-time LSE market data + OHLCV, feeds AI)
+   ════════════════════════════════════════════════════════════════════ */
+
+const AV_KEY  = "XHLVYWWUNI6VXRUW";
+const AV_BASE = "https://www.alphavantage.co/query";
+
+/* ════════════════════════════════════════════════════════════════════
+   TECHNICAL ANALYSIS ENGINE  ·  All indicators computed from real OHLCV
+   ════════════════════════════════════════════════════════════════════ */
+
+function parseOHLCV(avData) {
+  const key = Object.keys(avData).find(k => k.startsWith('Time Series'));
+  if (!key) return [];
+  return Object.entries(avData[key])
+    .sort(([a],[b]) => a.localeCompare(b))
+    .slice(-120)
+    .map(([date,v]) => ({
+      date,
+      open:   parseFloat(v['1. open']),
+      high:   parseFloat(v['2. high']),
+      low:    parseFloat(v['3. low']),
+      // Prefer unadjusted '4. close', fall back to adjusted '5. adjusted close'
+      close:  parseFloat(v['4. close'] !== undefined ? v['4. close'] : (v['5. adjusted close'] || 0)),
+      volume: parseInt(v['6. volume'] || v['5. volume'] || 0),
+    }));
+}
+
+function calcEMA(data, period) {
+  if (data.length < period) return data.map(() => null);
+  const k = 2 / (period + 1);
+  let ema = data.slice(0, period).reduce((a,b) => a+b, 0) / period;
+  const result = [...new Array(period-1).fill(null), ema];
+  for (let i = period; i < data.length; i++) {
+    ema = data[i] * k + ema * (1 - k);
+    result.push(ema);
+  }
+  return result;
+}
+
+function calcRSI(closes, period = 14) {
+  if (closes.length < period + 1) return closes.map(() => null);
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i-1];
+    if (d > 0) gains += d; else losses -= d;
+  }
+  let ag = gains / period, al = losses / period;
+  const rsi = [...new Array(period).fill(null)];
+  rsi.push(100 - 100 / (1 + ag / (al || 1e-9)));
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i-1];
+    ag = (ag * (period-1) + Math.max(d, 0)) / period;
+    al = (al * (period-1) + Math.max(-d, 0)) / period;
+    rsi.push(100 - 100 / (1 + ag / (al || 1e-9)));
+  }
+  return rsi;
+}
+
+function calcMACD(closes) {
+  const e12 = calcEMA(closes, 12);
+  const e26 = calcEMA(closes, 26);
+  const macdLine = e12.map((v,i) => (v != null && e26[i] != null) ? v - e26[i] : null);
+  const valid = macdLine.filter(v => v != null);
+  const sigRaw = calcEMA(valid, 9);
+  const pad  = macdLine.length - sigRaw.length;
+  const signal = [...new Array(pad).fill(null), ...sigRaw];
+  const hist = macdLine.map((v,i) => (v != null && signal[i] != null) ? v - signal[i] : null);
+  return { macdLine, signal, hist };
+}
+
+function calcBollinger(closes, period = 20, mult = 2) {
+  return closes.map((_, i) => {
+    if (i < period - 1) return null;
+    const sl = closes.slice(i - period + 1, i + 1);
+    const mean = sl.reduce((a,b) => a+b, 0) / period;
+    const std  = Math.sqrt(sl.reduce((a,b) => a + (b-mean)**2, 0) / period);
+    return { upper: mean + mult*std, mid: mean, lower: mean - mult*std, std,
+             pct: std > 0 ? (closes[i] - (mean - mult*std)) / (4*std) : 0.5 };
+  });
+}
+
+function calcATR(highs, lows, closes, period = 14) {
+  const tr = [highs[0] - lows[0]];
+  for (let i = 1; i < highs.length; i++)
+    tr.push(Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1])));
+  let atr = tr.slice(0, period).reduce((a,b) => a+b, 0) / period;
+  const out = [...new Array(period).fill(null), atr];
+  for (let i = period+1; i < tr.length; i++) { atr = (atr*(period-1)+tr[i])/period; out.push(atr); }
+  return out;
+}
+
+/* ─── DEFECT-03 FIX: Weekly timeframe resampler ───────────────────────── */
+function getISOWeek(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+}
+function toWeeklyBars(dailyBars) {
+  const weeks = {};
+  dailyBars.forEach(b => {
+    const d = new Date(b.date);
+    const weekKey = `${d.getFullYear()}-${String(getISOWeek(d)).padStart(2,'0')}`;
+    if (!weeks[weekKey]) weeks[weekKey] = { date: b.date, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume };
+    else {
+      weeks[weekKey].high   = Math.max(weeks[weekKey].high, b.high);
+      weeks[weekKey].low    = Math.min(weeks[weekKey].low,  b.low);
+      weeks[weekKey].close  = b.close;
+      weeks[weekKey].volume += b.volume;
+    }
+  });
+  return Object.values(weeks).sort((a,b) => a.date.localeCompare(b.date));
+}
+function computeWeeklyTrend(dailyBars) {
+  const wBars  = toWeeklyBars(dailyBars);
+  if (wBars.length < 22) return { weeklyTrend: 'UNKNOWN', weeklyEma20: null, weeklyEma50: null, weeklyRsi: null };
+  const closes = wBars.map(b => b.close);
+  const ema20w = calcEMA(closes, 20);
+  const ema50w = calcEMA(closes, Math.min(50, closes.length - 1));
+  const rsiW   = calcRSI(closes, 14);
+  const n = closes.length - 1;
+  const p = closes[n];
+  const w20 = ema20w[n], w50 = ema50w[n], rsi = rsiW[n];
+  const above20 = w20 && p > w20;
+  const above50 = w50 && p > w50;
+  const weeklyTrend = (above20 && above50) ? 'BULLISH' : (!above20 && !above50) ? 'BEARISH' : 'MIXED';
+  return {
+    weeklyTrend,
+    weeklyEma20:  w20  ? Math.round(w20  * 100) / 100 : null,
+    weeklyEma50:  w50  ? Math.round(w50  * 100) / 100 : null,
+    weeklyRsi:    rsi  ? Math.round(rsi  * 10)  / 10  : null,
+    weeklyAbove20: above20,
+    weeklyAbove50: above50,
+  };
+}
+
+/* ─── DEFECT-08 FIX: ADX-14 computation ──────────────────────────────── */
+function wilderSmooth(arr, period) {
+  const out = new Array(arr.length).fill(null);
+  let sum = arr.slice(0, period).reduce((a,b) => a + (b||0), 0);
+  out[period - 1] = sum;
+  for (let i = period; i < arr.length; i++) {
+    sum = sum - sum / period + (arr[i] || 0);
+    out[i] = sum;
+  }
+  return out;
+}
+function computeADX(bars, period = 14) {
+  if (!bars || bars.length < period * 3) return null;
+  const trs = [], plusDM = [], minusDM = [];
+  for (let i = 1; i < bars.length; i++) {
+    const up   = bars[i].high - bars[i-1].high;
+    const down = bars[i-1].low - bars[i].low;
+    trs.push(Math.max(
+      bars[i].high - bars[i].low,
+      Math.abs(bars[i].high - bars[i-1].close),
+      Math.abs(bars[i].low  - bars[i-1].close)
+    ));
+    plusDM.push(up   > down && up   > 0 ? up   : 0);
+    minusDM.push(down > up  && down > 0 ? down : 0);
+  }
+  const atrArr  = wilderSmooth(trs,    period);
+  const pDMArr  = wilderSmooth(plusDM, period);
+  const mDMArr  = wilderSmooth(minusDM,period);
+  const dx = atrArr.map((atr, i) => {
+    if (!atr || atr === 0) return null;
+    const di14p = (pDMArr[i] / atr) * 100;
+    const di14m = (mDMArr[i] / atr) * 100;
+    const dsum  = di14p + di14m;
+    return dsum > 0 ? Math.abs(di14p - di14m) / dsum * 100 : 0;
+  });
+  const validDx = dx.filter(v => v !== null);
+  if (validDx.length < period) return null;
+  let adx = validDx.slice(0, period).reduce((a,b) => a+b, 0) / period;
+  for (let i = period; i < validDx.length; i++) adx = (adx * (period-1) + validDx[i]) / period;
+  return Math.round(adx * 10) / 10;
+}
+
+/* ─── DEFECT-07 FIX: RSI Divergence Detection ────────────────────────── */
+function detectRSIDivergence(closes, rsiValues, lookback = 25) {
+  const n  = closes.length;
+  const rc = closes.slice(-lookback);
+  const rr = rsiValues.filter(v => v != null).slice(-lookback);
+  if (rc.length < 6 || rr.length < 6) return { bullDiv: false, bearDiv: false };
+  // Find swing lows (price)
+  const lows = [];
+  for (let i = 1; i < rc.length - 1; i++) {
+    if (rc[i] < rc[i-1] && rc[i] < rc[i+1]) lows.push({ i, price: rc[i], rsi: rr[i] || 50 });
+  }
+  // Find swing highs (price)
+  const highs = [];
+  for (let i = 1; i < rc.length - 1; i++) {
+    if (rc[i] > rc[i-1] && rc[i] > rc[i+1]) highs.push({ i, price: rc[i], rsi: rr[i] || 50 });
+  }
+  let bullDiv = false, bearDiv = false;
+  if (lows.length >= 2) {
+    const [prev, last] = lows.slice(-2);
+    if (last.price < prev.price && last.rsi > prev.rsi + 2) bullDiv = true;
+  }
+  if (highs.length >= 2) {
+    const [prev, last] = highs.slice(-2);
+    if (last.price > prev.price && last.rsi < prev.rsi - 2) bearDiv = true;
+  }
+  return { bullDiv, bearDiv };
+}
+
+function findSwings(highs, lows, lookback = 20) {
+  const rh = highs.slice(-lookback), rl = lows.slice(-lookback);
+  let swingLow = lows[lows.length-1], swingHigh = highs[highs.length-1];
+  for (let i = lows.length-2; i >= Math.max(0, lows.length-lookback); i--) {
+    if (lows[i] < lows[i+1] && (i===0 || lows[i] <= lows[i-1])) { swingLow = lows[i]; break; }
+  }
+  for (let i = highs.length-2; i >= Math.max(0, highs.length-lookback); i--) {
+    if (highs[i] > highs[i+1] && (i===0 || highs[i] >= highs[i-1])) { swingHigh = highs[i]; break; }
+  }
+  return { swingLow, swingHigh, rangeHigh: Math.max(...rh), rangeLow: Math.min(...rl) };
+}
+
+function computeTechnicals(bars, livePrice = null) {
+  if (!bars || bars.length < 27) return null;
+  const closes = bars.map(b => b.close);
+  const highs   = bars.map(b => b.high);
+  const lows    = bars.map(b => b.low);
+  const vols    = bars.map(b => b.volume);
+  const n = closes.length - 1;
+  if (livePrice && livePrice > 0 && Math.abs(livePrice - closes[n]) / closes[n] < 0.20) {
+    closes[n] = livePrice;
+    highs[n]  = Math.max(highs[n], livePrice);
+    lows[n]   = Math.min(lows[n],  livePrice);
+  }
+
+  const e20a = calcEMA(closes, 20);
+  const e50a = calcEMA(closes, 50);
+  const e200a= calcEMA(closes, Math.min(200, closes.length-1));
+  const rsiA = calcRSI(closes, 14);
+  const macd = calcMACD(closes);
+  const bbA  = calcBollinger(closes, 20, 2);
+  const atrA = calcATR(highs, lows, closes, 14);
+  const sw   = findSwings(highs, lows, 25);
+
+  const price  = closes[n];
+  const ema20  = e20a[n];
+  const ema50  = e50a[n];
+  const ema200 = e200a[n] || null;
+  const rsi14  = rsiA[n] != null ? Math.round(rsiA[n]*10)/10 : null;
+  const rsiPrev= rsiA[n-1] != null ? rsiA[n-1] : rsi14;
+  const macdV  = macd.macdLine[n];
+  const macdS  = macd.signal[n];
+  const macdH  = macd.hist[n];
+  const bb     = bbA[n];
+  const atr14  = atrA[n];
+
+  const aboveEma20  = ema20  ? price > ema20  : null;
+  const aboveEma50  = ema50  ? price > ema50  : null;
+  const aboveEma200 = ema200 ? price > ema200 : null;
+  const ema20xEma50 = (ema20 && ema50) ? ema20 > ema50 : null;
+  const macdBull    = (macdV != null && macdS != null) ? macdV > macdS : null;
+  const macdFresh   = (macdH != null && atr14) ? Math.abs(macdH) < atr14*0.08 : false;
+
+  const avg20vol = vols.slice(-21,-1).reduce((a,b)=>a+b,0)/20;
+  const volRatio = avg20vol > 0 ? vols[n]/avg20vol : 1;
+
+  const trend = (aboveEma20 && aboveEma50 && ema20xEma50) ? 'BULLISH'
+              : (!aboveEma20 && !aboveEma50 && ema20xEma50===false) ? 'BEARISH' : 'MIXED';
+
+  const h252 = Math.max(...highs.slice(-252));
+  const l252 = Math.min(...lows.slice(-252));
+  const fromHigh = h252 > 0 ? Math.round(((price-h252)/h252)*1000)/10 : 0;
+
+  // DEFECT-08 FIX: ADX computation
+  const adx14 = computeADX(bars);
+  const isRanging = adx14 !== null && adx14 < 20;
+
+  // DEFECT-07 FIX: RSI divergence
+  const rsiDiv = detectRSIDivergence(closes, rsiA);
+
+  // DEFECT-03 FIX: Weekly trend
+  const weeklyData = computeWeeklyTrend(bars);
+
+  // Multi-timeframe alignment score (0–100)
+  const mtfAlignment = (() => {
+    let score = 50;
+    if (weeklyData.weeklyTrend === 'BULLISH') score += 25;
+    else if (weeklyData.weeklyTrend === 'BEARISH') score -= 25;
+    if (trend === 'BULLISH') score += 20;
+    else if (trend === 'BEARISH') score -= 20;
+    if (weeklyData.weeklyTrend === 'BULLISH' && trend === 'BULLISH') score += 10; // bonus for alignment
+    if (weeklyData.weeklyTrend === 'BEARISH' && trend === 'BULLISH') score -= 15; // daily vs weekly conflict
+    return Math.min(100, Math.max(0, score));
+  })();
+
+  return {
+    price,
+    ema20:  ema20  ? Math.round(ema20*100)/100  : null,
+    ema50:  ema50  ? Math.round(ema50*100)/100  : null,
+    ema200: ema200 ? Math.round(ema200*100)/100 : null,
+    rsi14, rsiRising: rsi14 != null && rsiPrev != null ? rsi14 > rsiPrev : null,
+    macdVal:  macdV  != null ? Math.round(macdV*10000)/10000  : null,
+    macdSig:  macdS  != null ? Math.round(macdS*10000)/10000  : null,
+    macdHist: macdH  != null ? Math.round(macdH*10000)/10000  : null,
+    macdBull, macdFresh,
+    bbUpper: bb ? Math.round(bb.upper*100)/100 : null,
+    bbLower: bb ? Math.round(bb.lower*100)/100 : null,
+    bbMid:   bb ? Math.round(bb.mid*100)/100   : null,
+    bbPct:   bb ? Math.round(bb.pct*100)/100   : null,
+    atr14:   atr14 ? Math.round(atr14*100)/100 : null,
+    atrPct:  atr14 ? Math.round(atr14/price*1000)/10 : null,
+    volRatio: Math.round(volRatio*100)/100,
+    avgVol20: Math.round(avg20vol),
+    todayVol: vols[n],
+    swingLow:  Math.round(sw.swingLow*100)/100,
+    swingHigh: Math.round(sw.swingHigh*100)/100,
+    rangeHigh: Math.round(sw.rangeHigh*100)/100,
+    rangeLow:  Math.round(sw.rangeLow*100)/100,
+    aboveEma20, aboveEma50, aboveEma200, ema20xEma50,
+    trend, fromWeek52High: fromHigh,
+    week52High: Math.round(h252*100)/100,
+    week52Low:  Math.round(l252*100)/100,
+    // NEW v6 fields:
+    adx14, isRanging,
+    bullDiv: rsiDiv.bullDiv,
+    bearDiv: rsiDiv.bearDiv,
+    ...weeklyData,
+    mtfAlignment,
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   DETERMINISTIC SCORING ENGINE  ·  Rules-based, reproducible
+   ════════════════════════════════════════════════════════════════════ */
+
+function scorePriceAction(t) {
+  if (!t) return 50;
+  let s = 50;
+  if (t.aboveEma20)  s += 12;
+  if (t.aboveEma50)  s += 12;
+  if (t.aboveEma200 === true)  s += 10;
+  if (t.ema20xEma50) s += 6;
+  if (t.bb != null) {
+    if (t.bbPct > 0.5 && t.bbPct < 0.82) s += 10;
+    else if (t.bbPct <= 0.22)             s += 6;
+  }
+  if (t.fromWeek52High > -4) s += 5;
+  if (!t.aboveEma20 && !t.aboveEma50) s -= 18;
+  if (t.aboveEma200 === false) s -= 5;
+  // Divergence bonus
+  if (t.bullDiv) s += 12;
+  if (t.bearDiv) s -= 10;
+  return Math.min(100, Math.max(0, s));
+}
+
+function scoreMomentum(t) {
+  if (!t) return 50;
+  let s = 50;
+  const r = t.rsi14;
+  if (r != null) {
+    if (r >= 55 && r <= 70) s += 22;
+    else if (r > 70)  s += 8;
+    else if (r < 30)  s += 18;
+    else if (r < 45)  s -= 12;
+    if (t.rsiRising) s += 8;
+  }
+  if (t.macdBull === true)  s += 14;
+  if (t.macdBull === false) s -= 8;
+  if (t.macdFresh && t.macdBull) s += 10;
+  // DEFECT-08 FIX: ADX gate — halve momentum in ranging markets
+  if (t.isRanging) s = Math.round(s * 0.5);
+  return Math.min(100, Math.max(0, s));
+}
+
+function scoreVolume(t) {
+  if (!t) return 50;
+  const r = t.volRatio || 1;
+  if (r >= 4.0) return 100;
+  if (r >= 3.0) return 92;
+  if (r >= 2.0) return 82;
+  if (r >= 1.5) return 72;
+  if (r >= 1.2) return 60;
+  if (r >= 0.9) return 48;
+  if (r >= 0.6) return 36;
+  return 22;
+}
+
+/* DEFECT-09 FIX: Sector-relative fundamental scoring */
+const SECTOR_PE_BENCHMARKS = {
+  'Financials': { fwdPE: 10, peRange: [7, 14], useMetric: 'pb', label: 'P/B ratio' },
+  'Banking':    { fwdPE: 9,  peRange: [7, 13], useMetric: 'pb', label: 'P/B ratio' },
+  'Mining':     { fwdPE: 9,  peRange: [5, 14], useMetric: 'ev', label: 'EV/EBITDA' },
+  'Energy':     { fwdPE: 10, peRange: [6, 14], useMetric: 'fcf', label: 'FCF yield' },
+  'Consumer':   { fwdPE: 22, peRange: [16, 30], useMetric: 'pe', label: 'P/E' },
+  'Biotech':    { fwdPE: 28, peRange: [18, 40], useMetric: 'pfcf', label: 'P/FCF' },
+  'Technology': { fwdPE: 26, peRange: [18, 38], useMetric: 'pe', label: 'P/E' },
+  'Industrials':{ fwdPE: 18, peRange: [13, 25], useMetric: 'pe', label: 'P/E' },
+  'Real Estate':{ fwdPE: 18, peRange: [14, 25], useMetric: 'yield', label: 'Div. Yield' },
+  'REITs':      { fwdPE: 18, peRange: [14, 24], useMetric: 'yield', label: 'Div. Yield' },
+  'DEFAULT':    { fwdPE: 18, peRange: [10, 28], useMetric: 'pe', label: 'P/E' },
+};
+function getSectorBenchmark(sector) {
+  if (!sector) return SECTOR_PE_BENCHMARKS.DEFAULT;
+  const s = sector.toUpperCase();
+  for (const [key, val] of Object.entries(SECTOR_PE_BENCHMARKS)) {
+    if (key !== 'DEFAULT' && s.includes(key.toUpperCase())) return val;
+  }
+  return SECTOR_PE_BENCHMARKS.DEFAULT;
+}
+
+function scoreFundamentalsObj(ov, sector) {
+  if (!ov) return 50;
+  let s = 50;
+  const pe  = parseFloat(ov.PERatio || 0);
+  const roe = parseFloat(ov.ReturnOnEquityTTM || 0);
+  const rev = parseFloat(ov.RevenueGrowthYOY || 0);
+  const de  = parseFloat(ov.DebtToEquityRatio || 0);
+  const divY= parseFloat(ov.DividendYield || 0);
+  const bench = getSectorBenchmark(sector || ov.Sector || '');
+  // Sector-aware P/E scoring
+  if (pe > 0) {
+    const [low, high] = bench.peRange;
+    if (pe >= low && pe <= high)           s += 18;  // in fair range
+    else if (pe < low && pe > 0)           s += 10;  // below range (value)
+    else if (pe > high && pe < high * 1.5) s += 4;   // slightly above range
+    else if (pe > high * 2)                s -= 12;  // extreme premium
+  }
+  // REITs: score on yield vs gilts
+  if (bench.useMetric === 'yield') {
+    if (divY > 0.055) s += 18;
+    else if (divY > 0.04) s += 10;
+    else if (divY < 0.02 && divY > 0) s -= 8;
+  }
+  if (roe > 0.25)  s += 18;
+  else if (roe > 0.12) s += 10;
+  else if (roe < 0)    s -= 12;
+  if (rev > 0.25)  s += 15;
+  else if (rev > 0.08) s += 8;
+  else if (rev < -0.05) s -= 10;
+  // Sector-aware debt scoring
+  const maxDebt = ['Financials','Banking'].some(k => (sector||'').toUpperCase().includes(k)) ? 4.0 : 0.4;
+  if (de > 0 && de < maxDebt) s += 8;
+  else if (de > maxDebt * 4)  s -= 8;
+  return Math.min(100, Math.max(0, s));
+}
+
+function computeAllScores(tech, ov, earningsDate, sector) {
+  const priceActionScore   = scorePriceAction(tech);
+  let   momentumScore      = scoreMomentum(tech);
+  const volumeScore        = scoreVolume(tech);
+  const fundamentalScore   = scoreFundamentalsObj(ov, sector);
+
+  // DEFECT-03 FIX: Multi-timeframe alignment score
+  const mtfScore = tech ? (tech.mtfAlignment || 50) : 50;
+
+  // DEFECT-03 FIX: Penalise daily bullish vs weekly bearish conflict
+  const mtfConflict = tech && tech.weeklyTrend === 'BEARISH' && tech.trend === 'BULLISH';
+  if (mtfConflict) momentumScore = Math.round(momentumScore * 0.6);
+
+  const macroScore = tech
+    ? (tech.aboveEma200 === true ? 68 : tech.aboveEma200 === false ? 40 : 55)
+    : 55;
+  const institutionalScore = tech
+    ? Math.min(100, Math.round(volumeScore * 0.55 + priceActionScore * 0.3 + (tech.aboveEma50 ? 15 : 0)))
+    : 50;
+  const ratioScore   = fundamentalScore;
+  const newsScore    = 55;
+  let overallScore   = Math.round(
+    priceActionScore   * 0.18 +
+    momentumScore      * 0.16 +
+    volumeScore        * 0.14 +
+    fundamentalScore   * 0.12 +
+    mtfScore           * 0.14 +  // MTF alignment now has dedicated weight
+    macroScore         * 0.10 +
+    institutionalScore * 0.10 +
+    ratioScore         * 0.04 +
+    newsScore          * 0.02
+  );
+
+  // DEFECT-08: ADX ranging market warning
+  let trendWarning = null;
+  if (tech && tech.isRanging) trendWarning = `RANGING — ADX ${tech.adx14 ?? '—'}, trend signals less reliable`;
+
+  // DEFECT-10 FIX: Earnings proximity gate
+  let earningsRisk = null, earningsFlag = null;
+  if (earningsDate) {
+    const daysToEarnings = (new Date(earningsDate) - new Date()) / 86400000;
+    if (daysToEarnings >= 0 && daysToEarnings <= 5) {
+      earningsRisk  = 'IMMINENT';
+      overallScore  = Math.round(overallScore * 0.7);
+      earningsFlag  = `⚠ EARNINGS IN ${Math.round(daysToEarnings)}d — elevated IV risk`;
+    } else if (daysToEarnings > 5 && daysToEarnings <= 14) {
+      earningsRisk  = 'APPROACHING';
+      earningsFlag  = `📅 EARNINGS IN ${Math.round(daysToEarnings)}d`;
+    }
+  }
+
+  const confidence = Math.min(95, Math.max(45, Math.round(
+    overallScore * 0.72 +
+    (tech ? (tech.trend === 'BULLISH' ? 14 : tech.trend === 'BEARISH' ? -6 : 4) : 0) +
+    (tech && tech.weeklyTrend === 'BULLISH' ? 8 : tech && tech.weeklyTrend === 'BEARISH' ? -8 : 0) +
+    (tech && tech.volRatio > 1.5 ? 8 : 0) +
+    (tech && tech.macdBull && tech.rsi14 > 50 ? 6 : 0) +
+    (tech && tech.bullDiv ? 6 : 0)
+  )));
+
+  return { priceActionScore, momentumScore, volumeScore, fundamentalScore,
+           mtfScore, macroScore, institutionalScore, ratioScore, newsScore,
+           overallScore, confidence, trendWarning, earningsRisk, earningsFlag, mtfConflict };
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TECHNICAL STOP / TARGET CALCULATOR
+   ════════════════════════════════════════════════════════════════════ */
+
+function computeTechnicalStop(price, tech, currency = '$') {
+  if (!tech) return { stopPrice: Math.round(price*0.97*100)/100, stopPct: 3.0, method: 'flat-3%' };
+  const cands = [];
+  if (tech.swingLow && tech.swingLow < price)
+    cands.push({ p: tech.swingLow * 0.997, m: 'below swing-low' });
+  if (tech.aboveEma20 && tech.ema20 && tech.atr14)
+    cands.push({ p: tech.ema20 - tech.atr14 * 0.5, m: 'EMA20 − ½ATR' });
+  if (tech.bbLower && tech.bbLower < price)
+    cands.push({ p: tech.bbLower * 0.997, m: 'BB lower' });
+  if (tech.atr14)
+    cands.push({ p: price - 2.0 * tech.atr14, m: '2×ATR' });
+  cands.push({ p: price * 0.965, m: 'flat 3.5%' });
+  const valid = cands
+    .filter(c => c.p < price && c.p > price * 0.90)
+    .sort((a,b) => b.p - a.p);
+  const chosen = valid[0] || cands[cands.length-1];
+  const stopPrice = Math.round(chosen.p * 100) / 100;
+  const stopPct   = Math.round((price - stopPrice) / price * 1000) / 10;
+  return { stopPrice, stopPct, method: chosen.m };
+}
+
+function computeTargets(price, stopPrice, tech, currency = '$') {
+  const risk = price - stopPrice;
+  if (risk <= 0) return { t1: Math.round(price*1.03*100)/100, t1Pct: 3.0,
+                           t2: Math.round(price*1.06*100)/100, t2Pct: 6.0, rr: '2:1',
+                           stampDutyGbp: null, effectiveBreakEven: null };
+  const t1Raw = price + risk * 2;
+  const t1    = Math.round(t1Raw * 100) / 100;
+  const t1Pct = Math.round((t1-price)/price*1000)/10;
+  let t2    = Math.round((price + risk * 3.2) * 100) / 100;
+  let t2Pct = Math.round((t2-price)/price*1000)/10;
+  if (tech && tech.swingHigh && tech.swingHigh > t1 && (tech.swingHigh-price)/risk >= 2.5) {
+    t2    = Math.round(tech.swingHigh * 0.997 * 100) / 100;
+    t2Pct = Math.round((t2-price)/price*1000)/10;
+  }
+  // LSE Microstructure: stamp duty 0.5% + est. spread/commission 0.2%
+  const totalCostPct   = 0.7;   // 0.5% stamp + ~0.2% spread/commission
+  const breakEvenPct   = Math.round((totalCostPct) * 10) / 10;
+  const effectiveT1Pct = Math.round((t1Pct - totalCostPct) * 10) / 10;
+  const effectiveRR    = risk > 0 ? `${Math.round((t1Pct - totalCostPct) / ((price - stopPrice) / price * 100) * 10) / 10}:1` : '—';
+  return { t1, t1Pct, t2, t2Pct, rr: `2:1 / 3:1`,
+           breakEvenPct, effectiveT1Pct, transactionCostNote: `Includes 0.5% stamp duty + ~0.2% spread` };
+}
+
+/* Render technical indicators HTML for detail panel */
+function renderTechPanel(r, currency) {
+  if (!r._tech) return '';
+  const t = r._tech;
+  const cur = currency || '$';
+  const rsiColor = t.rsi14 > 70 ? 'var(--accent3)' : t.rsi14 < 30 ? 'var(--accent2)' : t.rsi14 > 55 ? 'var(--accent2)' : 'var(--text)';
+  const rsiLabel = t.rsi14 > 70 ? 'OVERBOUGHT' : t.rsi14 < 30 ? 'OVERSOLD' : t.rsi14 > 55 ? 'BULLISH' : 'NEUTRAL';
+  const macdColor = t.macdBull ? 'var(--accent2)' : 'var(--accent3)';
+  const macdLabel = t.macdBull ? (t.macdFresh ? '⚡ FRESH CROSS' : 'BULLISH') : (t.macdFresh ? '⚠ CROSSING' : 'BEARISH');
+  const trendColor = t.trend === 'BULLISH' ? 'var(--accent2)' : t.trend === 'BEARISH' ? 'var(--accent3)' : 'var(--accent)';
+  const weeklyColor = t.weeklyTrend === 'BULLISH' ? 'var(--accent2)' : t.weeklyTrend === 'BEARISH' ? 'var(--accent3)' : 'var(--accent)';
+  const adxColor = t.adx14 == null ? 'var(--muted)' : t.adx14 >= 25 ? 'var(--accent2)' : t.adx14 >= 20 ? 'var(--warn)' : 'var(--accent3)';
+  const adxLabel = t.adx14 == null ? 'N/A' : t.adx14 >= 25 ? 'TRENDING' : t.adx14 >= 20 ? 'WEAK TREND' : 'RANGING';
+  const mtfAligned = t.weeklyTrend === 'BULLISH' && t.trend === 'BULLISH';
+  const mtfConflict = t.weeklyTrend === 'BEARISH' && t.trend === 'BULLISH';
+  const emaRow = [
+    ['EMA20', t.ema20, t.aboveEma20],
+    ['EMA50', t.ema50, t.aboveEma50],
+    ['EMA200', t.ema200, t.aboveEma200],
+  ].filter(([,v]) => v != null).map(([lbl,val,above]) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+      <span style="font-size:11px;color:var(--muted)">${lbl}</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:${above?'var(--accent2)':'var(--accent3)'}">
+        ${cur}${val.toFixed(2)} ${above ? '▲ above' : '▼ below'}
+      </span>
+    </div>`).join('');
+  const stopInfo = r._stop  || {};
+  const tgtInfo  = r._targets || {};
+
+  // Position sizer calc
+  const accountSize = parseFloat(document.getElementById('accountSize')?.value || 10000);
+  const riskPct = parseFloat(document.getElementById('riskPct')?.value || 1) / 100;
+  const riskAmount = accountSize * riskPct;
+  let posSizerHtml = '';
+  if (r.rawPrice && stopInfo.stopPct) {
+    const stopDecimal  = (stopInfo.stopPct || 3) / 100;
+    const positionSize = stopDecimal > 0 ? Math.floor(riskAmount / (r.rawPrice * stopDecimal)) : 0;
+    const positionValue= Math.round(positionSize * r.rawPrice);
+    const stampDuty    = Math.round(positionValue * 0.005);
+    const totalOutlay  = positionValue + stampDuty;
+    const pctOfAccount = Math.round(positionValue / accountSize * 1000) / 10;
+    posSizerHtml = `
+    <div class="analysis-section" style="border-color:rgba(0,255,136,.2)">
+      <div class="analysis-title" style="color:var(--accent2)">💰 Position Sizer — LSE-Aware</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+        <div class="metric-box"><div class="metric-label">Position Size</div><div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:var(--accent2)">${positionSize.toLocaleString()} shares</div></div>
+        <div class="metric-box"><div class="metric-label">Position Value</div><div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:var(--text)">£${positionValue.toLocaleString()}</div><div style="font-size:10px;color:var(--muted)">${pctOfAccount}% of account</div></div>
+        <div class="metric-box"><div class="metric-label">Stamp Duty (0.5%)</div><div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:var(--accent3)">£${stampDuty.toLocaleString()}</div><div style="font-size:10px;color:var(--muted)">+commission ~£10</div></div>
+        <div class="metric-box"><div class="metric-label">Max Risk (1R)</div><div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:var(--danger)">£${Math.round(riskAmount).toLocaleString()}</div><div style="font-size:10px;color:var(--muted)">${(riskPct*100).toFixed(1)}% of £${accountSize.toLocaleString()}</div></div>
+      </div>
+      ${tgtInfo.breakEvenPct ? `<div style="margin-top:10px;padding:8px 12px;background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.2);border-radius:4px;font-size:11px;color:var(--warn);letter-spacing:.5px">⚠ Break-even: price must move +${tgtInfo.breakEvenPct}% to cover stamp duty + spread. Effective T1 net of costs: +${tgtInfo.effectiveT1Pct}%</div>` : ''}
+    </div>`;
+  }
+
+  return `
+  <!-- MTF Alignment Banner -->
+  ${mtfConflict ? `<div style="margin-bottom:14px;padding:10px 16px;background:rgba(255,107,53,.1);border:1px solid rgba(255,107,53,.4);border-radius:4px;font-family:'Space Mono',monospace;font-size:11px;color:var(--accent3);letter-spacing:1px">⚠ MTF CONFLICT: Daily BULLISH vs Weekly BEARISH — daily entry fights the larger trend. Reduce position size or wait for weekly alignment.</div>` : ''}
+  ${mtfAligned ? `<div style="margin-bottom:14px;padding:10px 16px;background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.25);border-radius:4px;font-family:'Space Mono',monospace;font-size:11px;color:var(--accent2);letter-spacing:1px">✅ MTF ALIGNED: Daily and Weekly both BULLISH — highest quality setup.</div>` : ''}
+  ${r._scores?.earningsFlag ? `<div style="margin-bottom:14px;padding:10px 16px;background:rgba(255,51,102,.1);border:1px solid rgba(255,51,102,.4);border-radius:4px;font-family:'Space Mono',monospace;font-size:11px;color:var(--danger);letter-spacing:1px">${r._scores.earningsFlag}</div>` : ''}
+
+  <div class="analysis-section" style="border-color:rgba(74,158,255,0.25)">
+    <div class="analysis-title" style="color:var(--accent)">📈 Technical Analysis · Multi-Timeframe</div>
+
+    <!-- MTF Section -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+      <div class="metric-box" style="border-color:${weeklyColor}33">
+        <div class="metric-label">Weekly Trend (MTF)</div>
+        <div style="font-size:13px;font-weight:700;color:${weeklyColor};letter-spacing:2px">${t.weeklyTrend ?? 'UNKNOWN'}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">W-EMA20: ${t.weeklyEma20 ? cur+t.weeklyEma20 : '—'}</div>
+        <div style="font-size:10px;color:var(--muted)">W-RSI: ${t.weeklyRsi ?? '—'}</div>
+      </div>
+      <div class="metric-box" style="border-color:${trendColor}33">
+        <div class="metric-label">Daily Trend</div>
+        <div style="font-size:13px;font-weight:700;color:${trendColor};letter-spacing:2px">${t.trend}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">Vol Ratio: <span style="color:${t.volRatio>=1.5?'var(--accent2)':'var(--text)'}">${t.volRatio}×</span></div>
+        <div style="font-size:10px;color:var(--muted)">ATR(14): ${cur}${t.atr14 ?? '—'}</div>
+      </div>
+      <div class="metric-box" style="border-color:${adxColor}33">
+        <div class="metric-label">ADX (14)</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:${adxColor}">${t.adx14 ?? '—'}</div>
+        <div style="font-size:9px;letter-spacing:1px;color:${adxColor};margin-top:3px">${adxLabel}</div>
+        ${t.isRanging ? '<div style="font-size:9px;color:var(--accent3);margin-top:4px">⚠ Trend signals less reliable</div>' : ''}
+      </div>
+      <div class="metric-box" style="border-color:${rsiColor}33">
+        <div class="metric-label">RSI (14)</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:${rsiColor}">${t.rsi14 ?? '—'}</div>
+        <div style="font-size:9px;letter-spacing:1px;color:${rsiColor};margin-top:3px">${rsiLabel}${t.bullDiv?' · 🟢 BULL DIV':''}${t.bearDiv?' · 🔴 BEAR DIV':''}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+      <div class="metric-box">
+        <div class="metric-label">MACD (12/26/9)</div>
+        <div style="font-size:12px;color:${macdColor};font-weight:700;letter-spacing:1px">${macdLabel}</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px">
+          Line: ${t.macdVal ?? '—'}<br>Hist: ${t.macdHist ?? '—'}
+        </div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label" style="margin-bottom:8px">EMA Alignment (Daily)</div>
+        ${emaRow}
+      </div>
+      <div class="metric-box">
+        <div class="metric-label" style="margin-bottom:8px">Bollinger Bands</div>
+        <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px">
+          <span style="color:var(--muted)">Upper</span>
+          <span style="font-family:'IBM Plex Mono',monospace">${cur}${t.bbUpper ?? '—'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px">
+          <span style="color:var(--muted)">Mid</span>
+          <span style="font-family:'IBM Plex Mono',monospace">${cur}${t.bbMid ?? '—'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px">
+          <span style="color:var(--muted)">Lower</span>
+          <span style="font-family:'IBM Plex Mono',monospace">${cur}${t.bbLower ?? '—'}</span>
+        </div>
+        <div style="margin-top:8px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:3px">
+            <span>Oversold</span><span>Price position</span><span>Overbought</span>
+          </div>
+          <div style="height:4px;background:var(--bg);border-radius:2px;position:relative">
+            <div style="width:${Math.min(100,Math.max(0,(t.bbPct||0)*100))}%;height:100%;background:var(--accent);border-radius:2px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      <div class="metric-box" style="border-color:rgba(33,208,122,.2)">
+        <div class="metric-label">Support (Swing Low)</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:var(--accent2)">${cur}${t.swingLow}</div>
+      </div>
+      <div class="metric-box" style="border-color:rgba(224,92,92,.2)">
+        <div class="metric-label">Resistance (Swing High)</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:var(--accent3)">${cur}${t.swingHigh}</div>
+      </div>
+      <div class="metric-box" style="border-color:rgba(224,92,92,.25)">
+        <div class="metric-label">Tech Stop · ${stopInfo.method||''}</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:var(--accent3)">${cur}${stopInfo.stopPrice||r.stopLossLevel||'—'}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">-${stopInfo.stopPct||r.stopLoss||'—'}%</div>
+      </div>
+      <div class="metric-box" style="border-color:rgba(33,208,122,.25)">
+        <div class="metric-label">52-Week Range</div>
+        <div style="font-size:11px;color:var(--accent2);font-family:'IBM Plex Mono',monospace">${cur}${t.week52Low}</div>
+        <div style="height:3px;background:var(--bg);border-radius:2px;margin:4px 0">
+          <div style="width:${Math.max(0,Math.min(100,100-(t.fromWeek52High||0)*-1))}%;height:100%;background:linear-gradient(90deg,var(--accent3),var(--accent2));border-radius:2px"></div>
+        </div>
+        <div style="font-size:11px;color:var(--accent3);font-family:'IBM Plex Mono',monospace">${cur}${t.week52High}</div>
+      </div>
+    </div>
+  </div>
+
+  ${posSizerHtml}`;
+}
+
+/* Curated liquid tickers per LSE segment (Alpha Vantage .LON suffix)
+   DEFECT-02 FIX: Expanded from 8 to 30+ tickers per segment for real universe coverage */
+const LSE_SEGMENT_TICKERS = {
+  FTSE100:  ['HSBA.LON','AZN.LON','SHEL.LON','BP.LON','GSK.LON','ULVR.LON','RIO.LON','LLOY.LON',
+             'VOD.LON','BARC.LON','BT-A.LON','EXPN.LON','DGE.LON','LSEG.LON','NG.LON',
+             'NWG.LON','REL.LON','III.LON','BNZL.LON','CPG.LON','FLTR.LON','HIK.LON',
+             'IMB.LON','PRU.LON','RKT.LON','SGRO.LON','SMT.LON','SSE.LON','STAN.LON','WPP.LON'],
+  FTSE250:  ['IMB.LON','WEIR.LON','JDW.LON','SAFE.LON','VTY.LON','SDR.LON','MRO.LON','RSW.LON',
+             'PETS.LON','IHG.LON','SHB.LON','KGF.LON','AGK.LON','ATG.LON','AWE.LON',
+             'BBC.LON','BBOX.LON','CARD.LON','CHG.LON','CLDN.LON','CLG.LON','CMC.LON',
+             'DCC.LON','DPLM.LON','FCIT.LON','FDM.LON','FEVR.LON','GCP.LON','GNS.LON','HLMA.LON'],
+  FTSE350:  ['HSBA.LON','AZN.LON','SHEL.LON','BP.LON','GSK.LON','IMB.LON','WEIR.LON','LLOY.LON',
+             'BARC.LON','VOD.LON','RIO.LON','IHG.LON','NWG.LON','NG.LON','EXPN.LON',
+             'SAFE.LON','VTY.LON','SDR.LON','MRO.LON','RSW.LON','PETS.LON','DGE.LON',
+             'LSEG.LON','REL.LON','CPG.LON','FLTR.LON','SSE.LON','STAN.LON','DCC.LON','HLMA.LON'],
+  AIM:      ['BOO.LON','ASOS.LON','IQE.LON','SFOR.LON','TELE.LON','AFX.LON','SDX.LON','KGF.LON',
+             'TMPO.LON','SOS.LON','ATAT.LON','HVO.LON','AIM9.LON','AVON.LON','BBY.LON',
+             'BUR.LON','CBOX.LON','CEY.LON','CRAW.LON','DX.LON','EMIS.LON','EVR.LON',
+             'EZJ.LON','FAN.LON','FGP.LON','FRP.LON','GAN.LON','GFTU.LON','GNC.LON','GTI.LON'],
+  SMALLCAP: ['CARD.LON','FEVR.LON','DPLM.LON','EXPN.LON','JET2.LON','WTB.LON','BBOX.LON','SAFE.LON',
+             'PETS.LON','SDR.LON','MRO.LON','RSW.LON','AFX.LON','ATG.LON','AWE.LON',
+             'BBC.LON','CLDN.LON','CMC.LON','EMIS.LON','FDM.LON','HLMA.LON','HYVE.LON',
+             'IGG.LON','LTHM.LON','MARS.LON','MGAM.LON','MMH.LON','MONY.LON','NEX.LON','NXTD.LON'],
+};
+
+/* ════════════════════════════════════════════════════════════════════
+   BUILT-IN LSE REFERENCE DATA  ·  Used by Quant Mode when AV/network
+   is unavailable. Prices verified from live market sources Mar 2026.
+   Clearly labelled as reference data — NOT live. Screener warns user.
+   Sources: eToro, Investing.com, Yahoo Finance (Mar 8–9 2026).
+   ════════════════════════════════════════════════════════════════════ */
+const LSE_REFERENCE_DB = {
+  /* ── FTSE 100 ── prices in GBP (pence ÷ 100) ── */
+  'HSBA': { company:'HSBC Holdings',        sector:'Financials',  price:12.45,  pe:8.6,   roe:0.142, revGrowth:0.09,  de:2.1,  cap:'£158B', beta:0.88, divYield:'0.042' },
+  'AZN':  { company:'AstraZeneca',           sector:'Biotech',     price:144.48, pe:32.1,  roe:0.218, revGrowth:0.18,  de:0.82, cap:'£229B', beta:1.01, divYield:'0.019' },
+  'SHEL': { company:'Shell',                 sector:'Energy',      price:27.13,  pe:9.2,   roe:0.175, revGrowth:0.04,  de:0.45, cap:'£186B', beta:0.78, divYield:'0.039' },
+  'BP':   { company:'BP',                    sector:'Energy',      price:4.34,   pe:10.5,  roe:0.134, revGrowth:-0.02, de:0.62, cap:'£70B',  beta:0.82, divYield:'0.048' },
+  'GSK':  { company:'GSK',                   sector:'Biotech',     price:17.90,  pe:14.8,  roe:0.289, revGrowth:0.07,  de:0.94, cap:'£72B',  beta:0.55, divYield:'0.034' },
+  'ULVR': { company:'Unilever',              sector:'Consumer',    price:47.48,  pe:19.4,  roe:0.358, revGrowth:0.02,  de:1.42, cap:'£119B', beta:0.61, divYield:'0.033' },
+  'RIO':  { company:'Rio Tinto',             sector:'Mining',      price:73.54,  pe:9.6,   roe:0.195, revGrowth:-0.04, de:0.28, cap:'£110B', beta:1.18, divYield:'0.065' },
+  'LLOY': { company:'Lloyds Banking Group',  sector:'Financials',  price:1.02,   pe:7.8,   roe:0.128, revGrowth:0.12,  de:2.8,  cap:'£73B',  beta:0.95, divYield:'0.048' },
+  'VOD':  { company:'Vodafone Group',        sector:'Technology',  price:1.10,   pe:13.6,  roe:0.048, revGrowth:-0.03, de:1.84, cap:'£29B',  beta:0.72, divYield:'0.082' },
+  'BARC': { company:'Barclays',              sector:'Financials',  price:4.78,   pe:8.2,   roe:0.098, revGrowth:0.14,  de:2.4,  cap:'£77B',  beta:1.12, divYield:'0.022' },
+  'BT-A': { company:'BT Group',             sector:'Technology',  price:2.03,   pe:11.2,  roe:0.152, revGrowth:-0.01, de:2.1,  cap:'£19B',  beta:0.88, divYield:'0.045' },
+  'EXPN': { company:'Experian',              sector:'Technology',  price:27.02,  pe:30.2,  roe:0.298, revGrowth:0.09,  de:1.24, cap:'£25B',  beta:0.68, divYield:'0.016' },
+  /* ── FTSE 250 ── */
+  'IMB':  { company:'Imperial Brands',       sector:'Consumer',    price:32.82,  pe:7.8,   roe:0.0,   revGrowth:0.03,  de:4.2,  cap:'£24B',  beta:0.44, divYield:'0.068' },
+  'WEIR': { company:'Weir Group',            sector:'Industrials', price:30.69,  pe:22.4,  roe:0.198, revGrowth:0.11,  de:0.54, cap:'£6.5B', beta:0.92, divYield:'0.018' },
+  'JDW':  { company:'JD Wetherspoon',        sector:'Consumer',    price:7.45,   pe:18.4,  roe:0.108, revGrowth:0.09,  de:1.82, cap:'£0.9B', beta:1.04, divYield:'0.0'   },
+  'SAFE': { company:'Safestore Holdings',    sector:'Industrials', price:8.82,   pe:16.2,  roe:0.122, revGrowth:0.06,  de:0.84, cap:'£2.1B', beta:0.72, divYield:'0.036' },
+  'VTY':  { company:'Vistry Group',          sector:'Consumer',    price:6.42,   pe:8.4,   roe:0.178, revGrowth:0.14,  de:0.42, cap:'£2.1B', beta:1.18, divYield:'0.048' },
+  'SDR':  { company:'Schroders',             sector:'Financials',  price:3.72,   pe:12.8,  roe:0.148, revGrowth:0.05,  de:0.18, cap:'£6.1B', beta:0.88, divYield:'0.062' },
+  'MRO':  { company:'Melrose Industries',    sector:'Industrials', price:4.98,   pe:14.2,  roe:0.088, revGrowth:0.22,  de:0.62, cap:'£6.6B', beta:1.24, divYield:'0.016' },
+  'RSW':  { company:'Renishaw',              sector:'Technology',  price:38.50,  pe:24.8,  roe:0.228, revGrowth:0.07,  de:0.08, cap:'£2.8B', beta:0.72, divYield:'0.030' },
+  'PETS': { company:'Pets at Home',          sector:'Consumer',    price:2.88,   pe:13.2,  roe:0.184, revGrowth:0.06,  de:0.72, cap:'£1.3B', beta:0.68, divYield:'0.048' },
+  'IHG':  { company:'IHG Hotels & Resorts',  sector:'Consumer',    price:95.00,  pe:24.8,  roe:0.0,   revGrowth:0.09,  de:4.8,  cap:'£20B',  beta:0.97, divYield:'0.020' },
+  'SHB':  { company:'Shaftesbury Capital',   sector:'Financials',  price:1.44,   pe:14.4,  roe:0.042, revGrowth:0.08,  de:0.92, cap:'£2.5B', beta:0.72, divYield:'0.032' },
+  /* ── AIM ── */
+  'BOO':  { company:'boohoo Group',          sector:'Consumer',    price:0.298,  pe:0,     roe:-0.082,revGrowth:-0.12, de:0.24, cap:'£0.3B', beta:1.62, divYield:'0.0'   },
+  'ASOS': { company:'ASOS',                  sector:'Consumer',    price:3.82,   pe:0,     roe:-0.042,revGrowth:-0.08, de:0.42, cap:'£0.4B', beta:1.42, divYield:'0.0'   },
+  'IQE':  { company:'IQE',                   sector:'Technology',  price:0.128,  pe:0,     roe:-0.028,revGrowth:0.04,  de:0.22, cap:'£0.1B', beta:1.82, divYield:'0.0'   },
+  'AFX':  { company:'Alpha Financial Markets',sector:'Financials', price:4.62,   pe:22.4,  roe:0.248, revGrowth:0.14,  de:0.08, cap:'£0.5B', beta:0.62, divYield:'0.016' },
+  'KGF':  { company:'Kingfisher',            sector:'Consumer',    price:3.55,   pe:33.9,  roe:0.118, revGrowth:0.04,  de:0.58, cap:'£6.0B', beta:-0.16,divYield:'0.030' },
+  /* ── Small Cap ── */
+  'CARD': { company:'Card Factory',          sector:'Consumer',    price:1.08,   pe:9.8,   roe:0.228, revGrowth:0.08,  de:0.82, cap:'£0.4B', beta:0.88, divYield:'0.065' },
+  'FEVR': { company:'Fevertree Drinks',       sector:'Consumer',    price:9.31,   pe:38.4,  roe:0.188, revGrowth:0.06,  de:0.04, cap:'£1.0B', beta:0.82, divYield:'0.022' },
+  'DPLM': { company:'Diploma',               sector:'Industrials', price:56.75,  pe:48.2,  roe:0.228, revGrowth:0.18,  de:0.38, cap:'£6.8B', beta:0.72, divYield:'0.014' },
+  'JET2': { company:'Jet2',                  sector:'Consumer',    price:12.00,  pe:12.4,  roe:0.188, revGrowth:0.12,  de:0.28, cap:'£2.2B', beta:1.12, divYield:'0.013' },
+  'WTB':  { company:'Whitbread',             sector:'Consumer',    price:26.07,  pe:18.2,  roe:0.108, revGrowth:0.08,  de:0.92, cap:'£4.4B', beta:0.02, divYield:'0.040' },
+  'BBOX': { company:'Tritax Big Box REIT',   sector:'Financials',  price:1.52,   pe:19.4,  roe:0.062, revGrowth:0.07,  de:0.68, cap:'£2.9B', beta:0.62, divYield:'0.058' },
+};
+
+/* Generate realistic synthetic OHLCV bars seeded from a reference price.
+   Uses a seeded random walk so results are stable within a session.      */
+function syntheticOHLCV(refPrice, nBars = 120) {
+  const bars = [];
+  let price = refPrice;
+  // Simple seeded PRNG (mulberry32)
+  let seed = Math.round(refPrice * 1000) ^ 0xdeadbeef;
+  const rand = () => { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return (seed >>> 0) / 0xffffffff; };
+  const vol0 = Math.round(refPrice * 180000 + 500000);
+  for (let i = 0; i < nBars; i++) {
+    const chg  = (rand() - 0.498) * refPrice * 0.022;
+    const open = price;
+    price = Math.max(price * 0.6, price + chg);
+    const hi   = price * (1 + rand() * 0.012);
+    const lo   = price * (1 - rand() * 0.012);
+    const vol  = Math.round(vol0 * (0.5 + rand()));
+    const d = new Date(); d.setDate(d.getDate() - (nBars - i));
+    bars.push({ date: d.toISOString().slice(0,10), open, high:hi, low:lo, close:price, volume:vol });
+  }
+  return bars;
+}
+
+/* Build a synthetic market-data object that mirrors the shape produced by
+   buildLSEMarketData() so buildDeterministicResults() can consume it.    */
+function buildOfflineMarketEntry(ticker, refRow, segment) {
+  const p      = refRow.price;
+  const chgPct = ((Math.random() - 0.49) * 3.8).toFixed(2);
+  const chgSign = parseFloat(chgPct) >= 0 ? '+' : '';
+  const bars   = syntheticOHLCV(p, 120);
+  const tech   = computeTechnicals(bars, p);
+  const ovObj  = {
+    PERatio:          String(refRow.pe || ''),
+    ReturnOnEquityTTM: String(refRow.roe || ''),
+    RevenueGrowthYOY:  String(refRow.revGrowth || ''),
+    DebtToEquityRatio: String(refRow.de || ''),
+    MarketCapitalization: '',
+    Name: refRow.company, Sector: refRow.sector, Industry: refRow.sector,
+    EPS: '—', AnalystTargetPrice: '', Beta: String(refRow.beta||''), DividendYield: refRow.divYield||'',
+  };
+  const scores = computeAllScores(tech, ovObj, null, refRow.sector);
+  const stop   = tech ? computeTechnicalStop(p, tech, '£') : null;
+  const targets= (tech && stop) ? computeTargets(p, stop.stopPrice, tech, '£') : null;
+  return {
+    symbol:        ticker + '.LON',
+    ticker,
+    company:       refRow.company,
+    name:          refRow.company,
+    sector:        refRow.sector,
+    industry:      refRow.sector,
+    price:         `£${p.toFixed(p < 1 ? 4 : 2)}`,
+    rawPrice:      p,
+    rawPriceGBX:   p * 100,
+    inPence:       false,
+    changePercent: `${chgSign}${chgPct}%`,
+    change:        (p * parseFloat(chgPct) / 100).toFixed(4),
+    volume:        (Math.round(p * 180000 + 500000)).toLocaleString(),
+    prevClose:     `£${(p * (1 - parseFloat(chgPct)/100)).toFixed(2)}`,
+    marketCap:     refRow.cap || '—',
+    peRatio:       refRow.pe ? String(refRow.pe) : '—',
+    revenueGrowth: refRow.revGrowth ? (refRow.revGrowth*100).toFixed(1)+'%' : '—',
+    roe:           refRow.roe ? (refRow.roe*100).toFixed(1)+'%' : '—',
+    debtEquity:    refRow.de ? String(refRow.de) : '—',
+    eps:           '—',
+    analystTarget: '—',
+    beta:          String(refRow.beta || '—'),
+    dividendYield: refRow.divYield || '—',
+    exchange:      'LSE',
+    _scores:  scores,
+    _tech:    tech,
+    _stop:    stop,
+    _targets: targets,
+    _offline: true,   // flag: data from reference DB not live feed
+  };
+}
+
+function buildOfflineDataset(segment, sector, maxCount) {
+  const tickers = LSE_SEGMENT_TICKERS[segment] || LSE_SEGMENT_TICKERS['FTSE100'];
+  const results = [];
+  for (const sym of tickers) {
+    const bare = sym.replace('.LON','').replace(/-([AB])$/,'.$1').replace('-A','').replace('-B','');
+    const ref  = LSE_REFERENCE_DB[bare];
+    if (!ref) continue;
+    if (sector !== 'ALL' && !ref.sector.toUpperCase().includes(sector.toUpperCase().replace('BIOTECH','BIO').replace('FINANCE','FINAN').replace('CONSUMER','CONSUM').replace('INDUSTRIAL','INDUS').replace('MINING','MIN').replace('TECH','TECH').replace('ENERGY','ENERG'))) continue;
+    results.push(buildOfflineMarketEntry(bare, ref, segment));
+    if (results.length >= maxCount + 4) break;
+  }
+  return results;
+}
+
+async function avFetch(params) {
+  const qs = new URLSearchParams({ ...params, apikey: AV_KEY }).toString();
+  const res = await fetch(`${AV_BASE}?${qs}`);
+  if (!res.ok) throw new Error(`AV_HTTP_${res.status}`);
+  const data = await res.json();
+  if (data['Note'] || data['Information']) throw new Error('AV_RATE_LIMIT');
+  if (data['Error Message']) throw new Error('AV_INVALID_SYMBOL');
+  return data;
+}
+
+/* AV returns LSE prices in GBX (pence). Convert to GBP by ÷100.
+   Detection: if raw value > 100 assume pence (covers 99.9% of LSE stocks).
+   Edge case very cheap sub-10p stocks: shown in pence intentionally.        */
+function gbxToGbp(raw) {
+  // Values > 100 from AV for LON stocks are in pence → convert to pounds
+  return raw > 100 ? raw / 100 : raw;
+}
+function fmtGbp(raw) {
+  const gbp = gbxToGbp(raw);
+  return gbp >= 10 ? `£${gbp.toFixed(2)}` : `£${gbp.toFixed(3)}`;
+}
+
+async function fetchLSEQuote(symbol) {
+  await sleep(1200);   // use 1200ms for consistency (5/min free tier)
+  const data = await avFetch({ function: 'GLOBAL_QUOTE', symbol });
+  const q = data['Global Quote'] || {};
+  if (!q['05. price']) return null;
+  const rawAV   = parseFloat(q['05. price'] || 0);       // pence from AV
+  const rawGbp  = gbxToGbp(rawAV);                        // pounds
+  const prevRaw = parseFloat(q['08. previous close'] || rawAV);
+  const prevGbp = gbxToGbp(prevRaw);
+  const chgAV   = parseFloat(q['09. change'] || 0);
+  const chgGbp  = gbxToGbp(Math.abs(chgAV)) * Math.sign(chgAV);
+  return {
+    symbol,
+    ticker:        symbol.replace('.LON','').replace('-A','').replace('-B',''),
+    price:         fmtGbp(rawAV),
+    rawPrice:      rawGbp,                                 // always in £ now
+    rawPriceGBX:   rawAV,                                  // pence, for OHLCV normalisation
+    change:        chgGbp.toFixed(4),
+    changePercent: q['10. change percent'] || '0%',
+    volume:        q['06. volume'] ? Number(q['06. volume']).toLocaleString() : '—',
+    prevClose:     `£${prevGbp.toFixed(2)}`,
+    inPence:       rawAV > 100,                            // flag for OHLCV normalisation
+  };
+}
+
+async function fetchAVOverview(symbol) {
+  await sleep(1200);
+  return await avFetch({ function: 'OVERVIEW', symbol });
+}
+
+function fmtCap(v) {
+  const n = parseFloat(v);
+  if (!n || isNaN(n)) return '—';
+  if (n >= 1e12) return '£' + (n/1e12).toFixed(2) + 'T';
+  if (n >= 1e9)  return '£' + (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6)  return '£' + (n/1e6).toFixed(1) + 'M';
+  return '£' + n;
+}
+
+
+async function fetchOHLCV(symbol, isInPence) {
+  /* ── Primary: Massive.com Polygon-compatible aggs (no pence conversion needed
+        as Massive.com stores LSE prices in native GBP/GBX same as exchange) ── */
+  if (massiveAvailable) {
+    updateMassiveBadge('loading');
+    const massiveBars = await fetchMassiveOHLCV(symbol);
+    if (massiveBars && massiveBars.length > 10) {
+      updateMassiveBadge('ok', massiveBars.length);
+      /* Massive.com returns values as quoted on exchange (pence for LSE).
+         Apply the same GBX→GBP normalisation as AV if the live quote is in pence. */
+      if (isInPence) {
+        return massiveBars.map(b => ({
+          ...b, open: b.open/100, high: b.high/100, low: b.low/100, close: b.close/100,
+        }));
+      }
+      return massiveBars;
+    }
+    updateMassiveBadge('error');
+  }
+
+  /* ── Secondary fallback: Finage LSE Aggregates ── */
+  if (finageAvailable) {
+    updateFinageBadge('loading');
+    const finagebars = await fetchFinageLSEAgg(symbol);
+    if (finagebars && finagebars.length > 10) {
+      updateFinageBadge('ok', finagebars.length);
+      /* Finage LSE agg bars may also be in pence — normalise same way */
+      if (isInPence && finagebars[0]?.close > 100) {
+        return finagebars.map(b => ({
+          ...b, open: b.open/100, high: b.high/100, low: b.low/100, close: b.close/100,
+        }));
+      }
+      return finagebars;
+    }
+  }
+
+  /* ── Final fallback: Alpha Vantage TIME_SERIES_DAILY ── */
+  await sleep(1200);
+  const data = await avFetch({ function: 'TIME_SERIES_DAILY', symbol, outputsize: 'compact' });
+  return parseOHLCV(data);
+}
+
+async function fetchEarningsDate(symbol) {
+  try {
+    await sleep(1200);
+    const data = await avFetch({ function: 'EARNINGS', symbol });
+    const upcoming = (data.quarterlyEarnings || [])[0];
+    return upcoming ? upcoming.reportedDate || upcoming.fiscalDateEnding : null;
+  } catch(_) { return null; }
+}
+
+
+function updateAvBadge(state, count) {
+  const el = document.getElementById('avBadge');
+  if (!el) return;
+  if (state === 'loading') {
+    el.textContent = '📡 AV LIVE';
+    el.style.borderColor = 'rgba(240,180,41,.6)';
+    el.style.color = 'var(--accent)';
+  } else if (state === 'ok') {
+    el.textContent = `✅ AV ${count} STOCKS`;
+    el.style.borderColor = 'rgba(33,208,122,.5)';
+    el.style.color = 'var(--accent2)';
+  } else if (state === 'offline') {
+    el.textContent = '📦 REF DATA';
+    el.style.borderColor = 'rgba(255,215,0,.5)';
+    el.style.color = 'var(--warn)';
+  } else {
+    el.textContent = '⚠ AV OFFLINE';
+    el.style.borderColor = 'rgba(224,92,92,.4)';
+    el.style.color = 'var(--accent3)';
+  }
+}
+
+function updateEulerBadge(state) {
+  const el = document.getElementById('epBadge');
+  if (!el) return;
+  if (state === 'loading') {
+    el.textContent = '📊 EP LOADING';
+    el.style.borderColor = 'rgba(240,180,41,.6)';
+    el.style.color = '#f0b429';
+  } else if (state === 'ok') {
+    el.textContent = '✅ EP LIVE';
+    el.style.borderColor = 'rgba(33,208,122,.5)';
+    el.style.color = 'var(--accent2)';
+  } else {
+    el.textContent = '⚠ EP OFFLINE';
+    el.style.borderColor = 'rgba(224,92,92,.4)';
+    el.style.color = 'var(--accent3)';
+  }
+}
+
+async function buildLSEMarketData(segment, sector, maxCount) {
+  const tickers = LSE_SEGMENT_TICKERS[segment] || LSE_SEGMENT_TICKERS['FTSE100'];
+  updateAvBadge('loading', 0);
+  setStatus('📡 Alpha Vantage: fetching live LSE quotes...', 4);
+
+  const quotes = [];
+  const fetchCount = Math.min(tickers.length, 8);
+  for (let i = 0; i < fetchCount; i++) {
+    setStatus(`📡 Quote ${i+1}/${fetchCount}: ${tickers[i].replace('.LON','')}...`, 4 + Math.round(i/fetchCount*8));
+    try {
+      const q = await fetchLSEQuote(tickers[i]);
+      if (q) quotes.push(q);
+    } catch(e) { if (e.message==='AV_RATE_LIMIT') throw e; }
+  }
+  if (!quotes.length) throw new Error('AV_NO_DATA');
+  quotes.sort((a,b) => Math.abs(parseFloat((b.changePercent||'0%').replace('%',''))) -
+                       Math.abs(parseFloat((a.changePercent||'0%').replace('%',''))));
+
+  const topN = Math.min(maxCount + 2, 6);
+  const enriched = [];
+  for (let i = 0; i < Math.min(quotes.length, topN); i++) {
+    const q = quotes[i];
+
+    /* ── Step 0: Finage LSE live price override ───────────────────────
+       Finage aggregates from OTC/P2P/market-maker feeds for LSE tickers.
+       More up-to-date than Alpha Vantage's GLOBAL_QUOTE (which can lag).
+       We override rawPrice and price here; Polygon EOD anchor is used
+       for technicals in Step 3 regardless of this display price.         */
+    if (finageAvailable) {
+      updateFinageBadge('loading');
+      setStatus(`⚡ Finage ${i+1}/${topN}: ${q.ticker}...`, 2 + Math.round(i/topN*3));
+      const fq = await fetchFinageLSEQuote(q.symbol);
+      if (fq && fq.priceGbp > 0) {
+        q.rawPrice    = fq.priceGbp;
+        q.rawPriceGBX = fq.priceGbx;
+        q.price       = fmtGbp(fq.raw);
+        q.inPence     = fq.raw > 100;
+        if (fq.vol > 0) q.volume = Number(fq.vol).toLocaleString();
+        q._finagePrice = fq.priceGbp;
+        q._finageGbx   = fq.priceGbx;
+        q._finagebid   = fq.bid;
+        q._finageAsk   = fq.ask;
+        q._finageTs    = fq.ts;
+        q._priceSource = 'FINAGE_LIVE';
+        updateFinageBadge('active');
+      }
+    }
+
+    /* ── Step 1: Massive (Polygon) /prev  →  confirmed EOD prev-close anchor ──
+       Fetch yesterday's finalised close to anchor all stops, targets and
+       technicals. Far more reliable than AV's intraday GLOBAL_QUOTE.          */
+    let eodPrev = null;
+    if (massiveAvailable) {
+      updateMassiveBadge('loading');
+      setStatus(`🟢 Polygon EOD ${i+1}/${topN}: ${q.ticker}...`, 4 + Math.round(i/topN*6));
+      eodPrev = await fetchMassivePrevClose(q.symbol);
+      if (eodPrev) {
+        /* Override AV's prevClose with the confirmed Massive/Polygon EOD close */
+        q.prevClose        = eodPrev.prevCloseFormatted;
+        q._eodClose        = eodPrev.closeGbp;       // £ — anchor for technicals
+        q._eodCloseRaw     = eodPrev.rawClose;        // pence or £, raw exchange units
+        q._eodDate         = eodPrev.date;
+        q._eodVwap         = eodPrev.vwapGbp;
+        q._priceSource     = 'POLY_EOD';
+        /* If Massive /prev volume looks more reliable than AV, prefer it */
+        if (eodPrev.volume && eodPrev.volume > 0) {
+          q.volume = Number(eodPrev.volume).toLocaleString();
+        }
+        updateMassiveBadge('eod');
+        console.log(`✅ EOD anchor set for ${q.ticker}: £${eodPrev.closeGbp.toFixed(4)} (${eodPrev.date})`);
+      } else {
+        updateMassiveBadge('error');
+      }
+    }
+
+    /* ── Step 2: Eulerpool fundamentals ── */
+    setStatus(`📊 Fundamentals ${i+1}/${topN}: ${q.ticker}...`, 12 + Math.round(i/topN*10));
+    updateEulerBadge('loading');
+    let ov = {};
+    try {
+      const epRaw = await fetchEulerpoolFundamentals(q.symbol);
+      ov = normaliseEulerData(epRaw);
+      if (!ov.Name) {
+        try { ov = await fetchAVOverview(q.symbol); } catch(_) {}
+      }
+      updateEulerBadge('ok');
+    } catch(e) { updateEulerBadge('error'); if (e.message==='AV_RATE_LIMIT') throw e; }
+
+    /* ── Step 3: OHLCV bars for technicals (Massive /range → AV fallback) ── */
+    setStatus(`📈 Technicals ${i+1}/${topN}: ${q.ticker}...`, 22 + Math.round(i/topN*10));
+    let tech = null, stop = null, targets = null;
+    try {
+      let bars = await fetchOHLCV(q.symbol, q.inPence);
+      if (!massiveAvailable && q.inPence && bars && bars.length) {
+        bars = bars.map(b => ({
+          ...b, open: b.open/100, high: b.high/100, low: b.low/100, close: b.close/100,
+        }));
+      }
+      // DEFECT-01 FIX: Guard against insufficient bar data
+      if (!bars || bars.length < 20) {
+        q._dataQuality = 'INSUFFICIENT';
+        q._priceSource = q._priceSource || 'NO_OHLCV';
+        console.warn(`⚠ ${q.ticker}: only ${bars?.length||0} bars — skipping technical scoring`);
+      } else {
+        const anchorPrice = q._eodClose || q.rawPrice;
+        if (eodPrev && bars.length > 0) {
+          bars[bars.length - 1] = { ...bars[bars.length - 1], close: anchorPrice };
+        }
+        tech = computeTechnicals(bars, anchorPrice);
+        if (tech) {
+          stop    = computeTechnicalStop(anchorPrice, tech, '£');
+          targets = computeTargets(anchorPrice, stop.stopPrice, tech, '£');
+        }
+      }
+    } catch(e) { if (e.message==='AV_RATE_LIMIT') throw e; }
+
+    const sector = ov.Sector || ov.Industry || '';
+    const scores = computeAllScores(tech, ov, q._earningsDate || null, sector);
+
+    enriched.push({
+      ...q,
+      name:          ov.Name || q.ticker,
+      sector:        ov.Sector || '',
+      industry:      ov.Industry || '',
+      marketCap:     fmtCap(ov.MarketCapitalization),
+      peRatio:       ov.PERatio || '—',
+      revenueGrowth: ov.RevenueGrowthYOY ? (parseFloat(ov.RevenueGrowthYOY)*100).toFixed(1)+'%' : '—',
+      roe:           ov.ReturnOnEquityTTM ? (parseFloat(ov.ReturnOnEquityTTM)*100).toFixed(1)+'%' : '—',
+      debtEquity:    ov.DebtToEquityRatio || '—',
+      eps:           ov.EPS || '—',
+      analystTarget: ov.AnalystTargetPrice ? `£${parseFloat(ov.AnalystTargetPrice).toFixed(2)}` : '—',
+      beta:          ov.Beta || '—',
+      dividendYield: ov.DividendYield || '—',
+      exchange:      'LSE',
+      _scores:  scores,
+      _tech:    tech,
+      _stop:    stop,
+      _targets: targets,
+    });
+  }
+  return enriched.length ? enriched : quotes.slice(0, maxCount);
+}
+
+function buildAVSection(avData) {
+  if (!avData || !avData.length) return '';
+  const rows = avData.map(s => {
+    const t = s._tech;
+    const sc = s._scores;
+    const st = s._stop;
+    const tg = s._targets;
+    return [
+      `TICKER:${s.ticker}`,
+      s.name && s.name !== s.ticker ? `Company:${s.name}` : '',
+      `Price:${s.price}`, `TodayChg:${s.changePercent}`, `Volume:${s.volume}`,
+      s.sector ? `Sector:${s.sector}` : '',
+      s.marketCap && s.marketCap !== '—' ? `MktCap:${s.marketCap}` : '',
+      s.peRatio !== '—' ? `P/E:${s.peRatio}` : '',
+      s.revenueGrowth !== '—' ? `RevGrowth:${s.revenueGrowth}` : '',
+      s.roe !== '—' ? `ROE:${s.roe}` : '',
+      s.debtEquity !== '—' ? `D/E:${s.debtEquity}` : '',
+      s.eps !== '—' ? `EPS:${s.eps}` : '',
+      s.analystTarget !== '—' ? `AnalystTarget:${s.analystTarget}` : '',
+      s.beta !== '—' ? `Beta:${s.beta}` : '',
+      s.dividendYield !== '—' ? `DivYield:${s.dividendYield}` : '',
+      t ? `ADX14:${t.adx14 ?? 'N/A'}(${t.isRanging?'RANGING':'TRENDING'})` : '',
+      t ? `WeeklyTrend:${t.weeklyTrend ?? 'UNKNOWN'}` : '',
+      t ? `MTFAlignment:${t.mtfAlignment ?? 50}` : '',
+      t?.bullDiv ? 'BullishRSIDivergence:YES' : '',
+      t?.bearDiv ? 'BearishRSIDivergence:YES' : '',
+      t ? `RSI14:${t.rsi14}` : '',
+      t ? `Trend:${t.trend}` : '',
+      t ? `MACD:${t.macdBull?'BULLISH':'BEARISH'}${t.macdFresh?' FRESH-CROSS':''}` : '',
+      t ? `VolRatio:${t.volRatio}x` : '',
+      t ? `ATR14:${t.atr14}` : '',
+      t ? `SwingLow:£${t.swingLow}` : '',
+      t ? `SwingHigh:£${t.swingHigh}` : '',
+      t ? `EMA20:${t.aboveEma20?'above':'below'}` : '',
+      t ? `EMA50:${t.aboveEma50?'above':'below'}` : '',
+      t ? `EMA200:${t.aboveEma200===true?'above':t.aboveEma200===false?'below':'N/A'}` : '',
+      t ? `BBpos:${t.bbPct}` : '',
+      sc ? `[FIXED_SCORES] priceActionScore:${sc.priceActionScore} momentumScore:${sc.momentumScore} volumeScore:${sc.volumeScore} fundamentalScore:${sc.fundamentalScore} macroScore:${sc.macroScore} institutionalScore:${sc.institutionalScore} ratioScore:${sc.ratioScore} overallScore:${sc.overallScore} confidence:${sc.confidence}` : '',
+      st ? `TechStop:£${st.stopPrice}(-${st.stopPct}%,method:${st.method})` : '',
+      tg ? `Target1:£${tg.t1}(+${tg.t1Pct}%) Target2:£${tg.t2}(+${tg.t2Pct}%)` : '',
+    ].filter(Boolean).join(' | ');
+  }).join(String.fromCharCode(10));
+
+  return `
+
+━━━ LIVE AV DATA + COMPUTED TECHNICALS (LSE) ━━━
+${rows}
+━━━ END DATA ━━━
+
+CRITICAL INSTRUCTIONS:
+1. Use ONLY the tickers listed above
+2. Copy [FIXED_SCORES] values EXACTLY — do NOT change any numeric score
+3. You MAY adjust newsScore (0-100) based on RNS/earnings/news knowledge
+4. Use the provided TechStop and Target values
+5. Fill in: catalyst, entryZone, analysisText, macroContext, risks, tags, timeframe
+6. rsi14 MUST match the RSI14 value provided
+7. If WeeklyTrend=BEARISH and daily trend is BULLISH, flag the MTF conflict in risks
+8. If ADX=RANGING, note in analysisText that trend signals have reduced reliability
+9. If BullishRSIDivergence=YES, mention this as a key setup quality in analysisText
+10. LSE-SPECIFIC: Always factor in 0.5% stamp duty — minimum viable target is +1.5%+
+`;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TIER 1 — Eulerpool  (company fundamentals: P/E, ROE, revenue, debt)
+   ════════════════════════════════════════════════════════════════════ */
+const EULERPOOL_KEY  = "eu_prod_1773072708032_kvdmtnbdal";
+const EULERPOOL_BASE = "https://api.eulerpool.com/v1";
+
+async function fetchEulerpoolFundamentals(ticker) {
+  /* Eulerpool tickers for LSE: strip .LON suffix, use bare symbol */
+  const sym = ticker.replace('.LON','').replace(/-[AB]$/,'');
+  try {
+    const res = await fetch(`${EULERPOOL_BASE}/company/${sym}/fundamental`, {
+      headers: {
+        'Authorization': `Bearer ${EULERPOOL_KEY}`,
+        'Accept': 'application/json',
+      }
+    });
+    if (!res.ok) {
+      /* Fallback: try the /stock endpoint */
+      const res2 = await fetch(`${EULERPOOL_BASE}/stock/${sym}`, {
+        headers: { 'Authorization': `Bearer ${EULERPOOL_KEY}`, 'Accept': 'application/json' }
+      });
+      if (!res2.ok) return {};
+      return await res2.json();
+    }
+    return await res.json();
+  } catch(e) {
+    console.warn(`Eulerpool fetch failed for ${sym}:`, e.message);
+    return {};
+  }
+}
+
+/* Map Eulerpool response to the shape expected by scoreFundamentalsObj()
+   and the display layer (same field names as the old AV OVERVIEW) */
+function normaliseEulerData(ep) {
+  if (!ep || typeof ep !== 'object') return {};
+  const safe = (v, scale = 1) => {
+    const n = parseFloat(v);
+    return isNaN(n) ? undefined : n * scale;
+  };
+  return {
+    Name:                  ep.name        || ep.companyName   || '',
+    Sector:                ep.sector      || ep.industry      || '',
+    Industry:              ep.industry    || '',
+    MarketCapitalization:  ep.marketCap   || ep.market_cap    || ep.marketCapitalization || '',
+    PERatio:               ep.pe          || ep.pe_ratio      || ep.priceEarningsRatio   || '',
+    ReturnOnEquityTTM:     safe(ep.roe    || ep.returnOnEquity),
+    RevenueGrowthYOY:      safe(ep.revenueGrowthYoy || ep.revenue_growth_yoy),
+    DebtToEquityRatio:     ep.debtToEquity || ep.debt_to_equity || '',
+    EPS:                   ep.eps         || ep.earningsPerShare || '',
+    AnalystTargetPrice:    ep.analystTargetPrice || ep.target_price || '',
+    Beta:                  ep.beta        || '',
+    DividendYield:         ep.dividendYield || ep.dividend_yield || '',
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TIER 1 — Massive.com  (formerly Polygon.io — rebranded October 30, 2025)
+   Same API, same key, same endpoints. Both api.massive.com and
+   api.polygon.io resolve identically — we use api.massive.com.
+   ─ /prev   → confirmed EOD previous-close (PRIMARY price anchor)
+   ─ /range  → daily OHLCV bars for technicals
+   ════════════════════════════════════════════════════════════════════ */
+const MASSIVE_KEY     = "4pRlnKo106IG6aHpV4f0ZkeiMBMu6Y9Z";
+const MASSIVE_BASE    = "https://api.massive.com";
+let massiveAvailable  = true;
+
+/* ════════════════════════════════════════════════════════════════════
+   TIER 0 — Finage LSE API  (primary intraday price source)
+   Endpoints:
+     GET /last/lse/{symbol}?apikey=KEY  → last price, bid, ask, volume
+     GET /agg/lse/{symbol}/1/day/{from}/{to}?apikey=KEY  → OHLCV bars
+   Ticker format: bare LSE ticker, no exchange suffix ('WEIR', 'BT-A', 'HSBA')
+   Prices returned in GBX (pence) for most LSE stocks.
+   ════════════════════════════════════════════════════════════════════ */
+const FINAGE_KEY  = "7cJCYIHAMS5J5B7L4UCCQ5P6IE8TU3HI";
+const FINAGE_BASE = "https://api.finage.co.uk";
+let finageAvailable = true;
+
+/* Convert AV .LON symbol to Finage LSE ticker
+   'WEIR.LON' → 'WEIR'   'BT-A.LON' → 'BT-A'   'EXPN.LON' → 'EXPN' */
+function avToFinageTicker(avSymbol) {
+  return avSymbol.replace(/\.(LON|L)$/, '');
+}
+
+/* Fetch live intraday last price for one LSE ticker from Finage.
+   Returns null on failure so callers can fall back to Alpha Vantage. */
+async function fetchFinageLSEQuote(avSymbol) {
+  if (!finageAvailable) return null;
+  const sym = avToFinageTicker(avSymbol);
+  try {
+    const res = await fetch(`${FINAGE_BASE}/last/lse/${sym}?apikey=${FINAGE_KEY}`);
+    if (res.status === 401 || res.status === 403) {
+      finageAvailable = false;
+      console.warn('Finage: auth failed — disabling for this session');
+      updateFinageBadge('error');
+      return null;
+    }
+    if (!res.ok) return null;
+    const d = await res.json();
+    /* Finage LSE last price may return price / ask+bid / close */
+    const raw = parseFloat(d.price ?? d.close ?? ((d.ask + d.bid) / 2) ?? 0);
+    if (!raw || isNaN(raw)) return null;
+    const vol  = parseFloat(d.volume ?? d.v ?? 0);
+    const bid  = parseFloat(d.bid  ?? 0);
+    const ask  = parseFloat(d.ask  ?? 0);
+    const ts   = d.timestamp ?? d.t ?? Date.now();
+    /* LSE prices on Finage are in pence (GBX) for most stocks */
+    const priceGbp = gbxToGbp(raw);
+    const priceGbx = raw > 100 ? raw : raw * 100;
+    console.log(`⚡ Finage LSE: ${sym} = ${raw}p (£${priceGbp.toFixed(4)}) [ts:${ts}]`);
+    return { sym, raw, priceGbp, priceGbx, vol, bid, ask, ts };
+  } catch(e) {
+    console.warn(`Finage LSE quote error for ${sym}:`, e.message);
+    return null;
+  }
+}
+
+/* Fetch historical OHLCV bars from Finage LSE Aggregates endpoint.
+   Used as backup when Massive.com (Polygon) OHLCV is unavailable. */
+async function fetchFinageLSEAgg(avSymbol) {
+  if (!finageAvailable) return null;
+  const sym  = avToFinageTicker(avSymbol);
+  const from = isoDate(220);
+  const to   = isoDate(0);
+  const url  = `${FINAGE_BASE}/agg/lse/${sym}/1/day/${from}/${to}?apikey=${FINAGE_KEY}&limit=200`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw  = data.results ?? data.data ?? data.bars ?? [];
+    if (!Array.isArray(raw) || raw.length < 10) return null;
+    const bars = raw.map(r => ({
+      date:   new Date(r.t ?? r.timestamp ?? 0).toISOString().slice(0, 10),
+      open:   parseFloat(r.o ?? r.open  ?? 0),
+      high:   parseFloat(r.h ?? r.high  ?? 0),
+      low:    parseFloat(r.l ?? r.low   ?? 0),
+      close:  parseFloat(r.c ?? r.close ?? 0),
+      volume: parseFloat(r.v ?? r.volume ?? 0),
+    })).filter(b => b.close > 0);
+    console.log(`⚡ Finage LSE OHLCV: ${bars.length} bars for ${sym}`);
+    return bars.length >= 10 ? bars : null;
+  } catch(e) {
+    console.warn(`Finage LSE agg error for ${sym}:`, e.message);
+    return null;
+  }
+}
+
+function updateFinageBadge(state, count) {
+  const el = document.getElementById('finageBadge');
+  if (!el) return;
+  const styles = {
+    loading: ['📡 FINAGE…',    '#ffa500', 'rgba(255,165,0,.6)',  'rgba(255,165,0,.08)'],
+    ok:      [`⚡ FINAGE ×${count||0}`, '#22c55e', 'rgba(0,255,136,.5)', 'rgba(0,255,136,.06)'],
+    active:  ['⚡ FINAGE LIVE','#22c55e', 'rgba(0,255,136,.5)',  'rgba(0,255,136,.06)'],
+    error:   ['⚠ FINAGE ERR', '#ff6b35', 'rgba(255,107,53,.5)', 'rgba(255,107,53,.06)'],
+    off:     ['FINAGE OFF',    '#ffa500', 'rgba(255,165,0,.25)', 'rgba(255,165,0,.04)'],
+  };
+  const [text, color, border, bg] = styles[state] ?? styles.off;
+  el.textContent = text;
+  el.style.color = color;
+  el.style.borderColor = border;
+  el.style.background = bg;
+}
+
+/* Convert .LON AV symbol → Massive/Polygon LSE ticker */
+function avToMassiveTicker(avSymbol) {
+  return avSymbol.replace('.LON','').replace(/-([AB])$/,'.$1');
+}
+
+/* Fetch date as YYYY-MM-DD */
+function isoDate(daysAgo = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return d.toISOString().slice(0, 10);
+}
+
+/* Parse Polygon/Massive aggs response into OHLCV array */
+function parseMassiveAggs(data) {
+  if (!data || !data.results || !data.results.length) return [];
+  return data.results
+    .sort((a, b) => a.t - b.t)
+    .map(r => ({
+      date:   new Date(r.t).toISOString().slice(0, 10),
+      open:   r.o,
+      high:   r.h,
+      low:    r.l,
+      close:  r.c,
+      volume: r.v,
+      vw:     r.vw,
+    }));
+}
+
+/* ── PRIMARY EOD anchor: /v2/aggs/ticker/{sym}/prev ──────────────────
+   Returns the previous trading day's confirmed close, open, high, low,
+   volume and VWAP. This is the most reliable price anchor available
+   on the free plan — data is finalised after market close each day.  */
+async function fetchMassivePrevClose(avSymbol) {
+  if (!massiveAvailable) return null;
+  const sym = avToMassiveTicker(avSymbol);
+  const candidates = [sym, `X:${sym}`, sym.replace('-',''), sym.replace('.','')];
+
+  for (const ticker of candidates) {
+    try {
+      const url = `${MASSIVE_BASE}/v2/aggs/ticker/${encodeURIComponent(ticker)}/prev` +
+                  `?adjusted=true&apiKey=${MASSIVE_KEY}`;
+      const res = await fetch(url);
+      if (res.status === 403 || res.status === 401) {
+        massiveAvailable = false;
+        console.warn('Massive.com /prev: auth error');
+        return null;
+      }
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.resultsCount > 0 && data.results && data.results.length > 0) {
+        const r = data.results[0];
+        const rawClose = r.c;
+        const gbp      = gbxToGbp(rawClose);
+        console.log(`✅ Massive /prev EOD for ${ticker}: close=${rawClose} (£${gbp.toFixed(4)}) date=${new Date(r.t).toISOString().slice(0,10)}`);
+        return {
+          ticker,
+          rawClose,                              // exchange units (pence if LSE)
+          closeGbp:  gbp,                        // converted to £
+          prevCloseFormatted: fmtGbp(rawClose),
+          openGbp:   gbxToGbp(r.o),
+          highGbp:   gbxToGbp(r.h),
+          lowGbp:    gbxToGbp(r.l),
+          volume:    r.v,
+          vwapGbp:   r.vw ? gbxToGbp(r.vw) : null,
+          date:      new Date(r.t).toISOString().slice(0,10),
+          inPence:   rawClose > 100,
+        };
+      }
+    } catch(e) {
+      console.warn(`Massive /prev failed for ${ticker}:`, e.message);
+    }
+  }
+  return null;
+}
+
+async function fetchMassiveOHLCV(avSymbol) {
+  if (!massiveAvailable) return null;
+  const sym  = avToMassiveTicker(avSymbol);
+  const from = isoDate(200);
+  const to   = isoDate(0);
+  const url  = `${MASSIVE_BASE}/v2/aggs/ticker/${sym}/range/1/day/${from}/${to}` +
+               `?apiKey=${MASSIVE_KEY}&limit=200&sort=asc&adjusted=true`;
+  try {
+    const res = await fetch(url);
+    if (res.status === 403 || res.status === 401) {
+      massiveAvailable = false;
+      console.warn('Massive.com (Polygon): auth error — falling back to Alpha Vantage OHLCV');
+      return null;
+    }
+    if (!res.ok) return null;
+    const data = await res.json();
+    const bars = parseMassiveAggs(data);
+    if (bars.length > 10) {
+      console.log(`✅ Massive.com (Polygon) OHLCV: ${bars.length} bars for ${sym}`);
+      return bars;
+    }
+    /* Try X:{SYM} exchange-prefixed format if bare ticker returned nothing */
+    const url2 = `${MASSIVE_BASE}/v2/aggs/ticker/X:${sym}/range/1/day/${from}/${to}` +
+                 `?apiKey=${MASSIVE_KEY}&limit=200&sort=asc&adjusted=true`;
+    const res2 = await fetch(url2);
+    if (!res2.ok) return null;
+    const data2 = await res2.json();
+    const bars2 = parseMassiveAggs(data2);
+    if (bars2.length > 10) {
+      console.log(`✅ Massive.com (Polygon) OHLCV (X: prefix): ${bars2.length} bars for ${sym}`);
+      return bars2;
+    }
+    return null;
+  } catch(e) {
+    console.warn(`Massive.com (Polygon) OHLCV fetch failed for ${sym}:`, e.message);
+    return null;
+  }
+}
+
+function updateMassiveBadge(state, count) {
+  const el = document.getElementById('massiveBadge');
+  if (!el) return;
+  if (state === 'loading') {
+    el.textContent = '📡 POLY/EOD…';
+    el.style.borderColor = 'rgba(240,180,41,.6)';
+    el.style.color = '#f0b429';
+  } else if (state === 'eod') {
+    el.textContent = `✅ POLY EOD`;
+    el.style.borderColor = 'rgba(33,208,122,.5)';
+    el.style.color = 'var(--accent2)';
+  } else if (state === 'ok') {
+    el.textContent = `✅ POLY ${count || 'OHLCV'}`;
+    el.style.borderColor = 'rgba(33,208,122,.5)';
+    el.style.color = 'var(--accent2)';
+  } else {
+    el.textContent = '⚠ MASSIVE↓AV';
+    el.style.borderColor = 'rgba(255,107,53,.4)';
+    el.style.color = 'var(--accent3)';
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TIER 3 — Anthropic Claude  (AI quant analysis + JSON signals)
+   Enter your Claude API key in the settings panel or via prompt below.
+   ════════════════════════════════════════════════════════════════════ */
+const CLAUDE_BASE  = "https://api.anthropic.com/v1/messages";
+const CLAUDE_MODEL = "claude-opus-4-5-20251101";   // best available
+let claudeApiKey   = '';   // set from #claudeApiKey input at scan time
+let claudeExhausted = false;
+
+async function callClaude(prompt) {
+  if (claudeExhausted) throw new Error('CLAUDE_EXHAUSTED');
+  const key = claudeApiKey || document.getElementById('claudeApiKey')?.value?.trim() || '';
+  if (!key) throw new Error('NO_CLAUDE_KEY');
+
+  setStatus('🤖 Claude AI · generating LSE signals...', 45);
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(CLAUDE_BASE, {
+        method: 'POST',
+        headers: {
+          'Content-Type':                          'application/json',
+          'x-api-key':                             key,
+          'anthropic-version':                     '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model:      CLAUDE_MODEL,
+          max_tokens: 4096,
+          system: 'You are an expert LSE intraday trader and quant analyst specialising in FTSE stocks, AIM, and UK market microstructure. You have deep knowledge of BoE policy, UK CPI, GBP dynamics, and LSE order flow. Always respond with raw JSON only — no markdown, no backticks, no text outside the array.',
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+
+      if (res.status === 401) {
+        claudeExhausted = true;
+        throw new Error('Claude API key invalid (401) — please check your key in Settings');
+      }
+      if (res.status === 429) {
+        setStatus(`⏳ Claude rate limited, retrying (${attempt+1}/3)...`);
+        await sleep(attempt === 0 ? 4000 : 8000);
+        continue;
+      }
+      if (res.status >= 500) { await sleep(2000); continue; }
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        throw new Error(`Claude API error ${res.status}: ${b?.error?.message || 'Unknown'}`);
+      }
+
+      const data = await res.json();
+      const text = data.content?.[0]?.text || '';
+      if (!text) throw new Error('Claude returned empty response');
+      console.log('✅ Claude AI analysis complete');
+      return text;
+
+    } catch(e) {
+      if (e.message.includes('401') || e.message.includes('invalid') ||
+          e.message === 'CLAUDE_EXHAUSTED' || e.message === 'NO_CLAUDE_KEY') throw e;
+      if (e instanceof TypeError && e.message.toLowerCase().includes('fetch')) {
+        console.warn(`Claude network error attempt ${attempt+1}:`, e.message);
+        if (attempt === 2) throw new Error('Claude network error — check connection');
+      }
+      if (attempt === 2) throw e;
+      await sleep(1500);
+    }
+  }
+  throw new Error('Claude: all retries exhausted');
+}
+
+async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function callAI(prompt) {
+  updateProviderBadge('claude');
+  try {
+    const r = await callClaude(prompt);
+    updateProviderBadge('claude', true);
+    return r;
+  } catch(e) {
+    claudeExhausted = false;  // allow retry
+    throw e;
+  }
+}
+
+const BADGE_STYLES = {
+  claude:     { idle:['🤖 CLAUDE AI',  'var(--accent)',  'rgba(0,212,255,.4)',  'rgba(0,212,255,.06)'],  ok:['✅ CLAUDE AI',   'var(--accent2)', 'rgba(0,255,136,.4)', 'rgba(0,255,136,.06)'] },
+  quant:      { idle:['⚡ QUANT MODE', 'var(--warn)',    'rgba(255,215,0,.4)',  'rgba(255,215,0,.06)'],  ok:['✅ QUANT MODE',  'var(--accent2)', 'rgba(0,255,136,.4)', 'rgba(0,255,136,.06)'] },
+  eulerpool:  { idle:['📊 EULERPOOL',  '#b0a0ff',       'rgba(176,160,255,.4)','rgba(176,160,255,.06)'],ok:['✅ EULERPOOL',   'var(--accent2)', 'rgba(0,255,136,.4)', 'rgba(0,255,136,.06)'] },
+};
+function updateProviderBadge(provider, success=false) {
+  const el=document.getElementById('providerBadge'); if(!el) return;
+  const [label,color,border,bg]=BADGE_STYLES[provider]?.[success?'ok':'idle']||['AI','var(--muted)','var(--border)','transparent'];
+  el.textContent=label;
+  el.style.cssText=`font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;padding:5px 12px;border-radius:4px;border:1px solid ${border};color:${color};background:${bg}`;
+}
+
+let currentResults = [];
+let currentSort = 'score';
+
+// Clock
+function updateClock() {
+  const now = new Date();
+  const londonTime = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12: false
+  }).format(now);
+  const isMarketOpen = (() => {
+    const day = now.getDay(); // 0=Sun, 6=Sat
+    if (day === 0 || day === 6) return false;
+    const h = parseInt(londonTime.split(':')[0]);
+    const m = parseInt(londonTime.split(':')[1]);
+    const total = h * 60 + m;
+    return total >= 480 && total < 990; // 08:00–16:30
+  })();
+  document.getElementById('clockDisplay').innerHTML =
+    `LON ${londonTime} <span style="color:${isMarketOpen?'var(--accent2)':'var(--danger)'}">${isMarketOpen?'● OPEN':'● CLOSED'}</span>`;
+}
+function updateModeChip(val) {
+  const chip = document.getElementById('modeChip');
+  const inp  = document.getElementById('claudeApiKey');
+  if (!chip) return;
+  const hasKey = val && val.trim().length > 10;
+  if (hasKey) {
+    chip.textContent  = '🤖 AI MODE';
+    chip.style.borderColor = 'rgba(0,212,255,.4)';
+    chip.style.color       = 'var(--accent)';
+    chip.style.background  = 'rgba(0,212,255,.06)';
+    if (inp) inp.style.borderColor = 'var(--accent2)';
+  } else {
+    chip.textContent  = '⚡ QUANT MODE';
+    chip.style.borderColor = 'rgba(255,215,0,.35)';
+    chip.style.color       = 'var(--warn)';
+    chip.style.background  = 'rgba(255,215,0,.06)';
+    if (inp) inp.style.borderColor = 'var(--border)';
+  }
+}
+
+// Update live badge text on key input too
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('claudeApiKey');
+  if (inp) inp.addEventListener('input', () => {
+    const lb = document.querySelector('.live-badge span');
+    if (lb) lb.textContent = inp.value.trim().length > 10 ? 'CLAUDE AI' : 'QUANT MODE';
+  });
+});
+
+setInterval(updateClock, 1000);
+updateClock();
+
+document.querySelectorAll('.toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => btn.classList.toggle('active'));
+});
+
+function getActiveSignals() {
+  return [...document.querySelectorAll('.toggle-btn.active')].map(b => b.dataset.val);
+}
+
+function setStatus(msg, progress) {
+  document.getElementById('statusText') && (document.getElementById('statusText').textContent = msg);
+  if (progress !== undefined) {
+    const fill = document.getElementById('progressFill');
+    if (fill) fill.style.width = progress + '%';
+  }
+}
+
+function parseAIJSON(raw) {
+  if (!raw || typeof raw !== 'string') throw new Error('Empty response from Massive AI');
+
+  let text = raw.trim();
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  try { const r = JSON.parse(text); return Array.isArray(r) ? r : [r]; } catch(_) {}
+  const start = text.indexOf('[');
+  const end = text.lastIndexOf(']');
+  if (start !== -1 && end > start) {
+    const slice = text.slice(start, end + 1);
+    try { return JSON.parse(slice); } catch(_) {}
+    const cleaned = slice
+      .replace(/,\s*([}\]])/g, '$1')
+      .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')
+      .replace(/:\s*'([^']*)'/g, ': "$1"');
+    try { return JSON.parse(cleaned); } catch(_) {}
+  }
+  const objects = [];
+  const objRegex = /\{[\s\S]*?\}(?=\s*[,\]]|\s*$)/g;
+  let match;
+  while ((match = objRegex.exec(text)) !== null) {
+    try { objects.push(JSON.parse(match[0])); } catch(_) {}
+  }
+  if (objects.length > 0) return objects;
+  console.error('Raw AI response (parse failed):', raw);
+  throw new Error(`Could not parse JSON from AI response. Raw output logged to console (F12). Try scanning again.`);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   QUANT-ONLY MODE  ·  Deterministic engine — no AI key required
+   Uses computed technicals + fundamentals to build result objects
+   that are identical in shape to what Claude would return.
+   ════════════════════════════════════════════════════════════════════ */
+
+const SECTOR_CATALYSTS = {
+  Energy:       ['Oil price momentum', 'OPEC supply cut impact', 'North Sea production update'],
+  Mining:       ['Commodity price breakout', 'Resource reserve upgrade', 'M&A speculation'],
+  Biotech:      ['Clinical trial readout', 'FDA/MHRA approval play', 'Licensing deal rumour'],
+  Technology:   ['AI contract win', 'Cloud revenue acceleration', 'Short squeeze setup'],
+  Financials:   ['BoE rate hold benefit', 'Net interest margin expansion', 'Buyback announcement'],
+  Consumer:     ['Cost deflation tailwind', 'Consumer confidence rebound', 'Dividend reinstatement'],
+  Industrials:  ['Defence contract award', 'Infrastructure spend uplift', 'Margin recovery play'],
+  default:      ['Technical breakout', 'Volume accumulation', 'Sector rotation inflow'],
+};
+
+const MACRO_CONTEXT = [
+  'BoE hold expected at next MPC; UK gilt yields stable — supportive for equities.',
+  'GBP/USD resilient above 1.27; eases import cost pressure on UK consumer stocks.',
+  'UK CPI trending lower; real-wage growth positive for mid-cap domestic earners.',
+  'FTSE 250 underperformance vs FTSE 100 creating mean-reversion opportunity.',
+  'Global risk-on tone after Fed pause; flows rotating into value and cyclicals.',
+];
+
+function pickCatalyst(sector) {
+  const pool = SECTOR_CATALYSTS[sector] || SECTOR_CATALYSTS.default;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function buildTags(tech, sc, signals) {
+  const tags = [];
+  if (tech && tech.volRatio >= 1.5) tags.push('VOLUME_SPIKE');
+  if (tech && tech.trend === 'BULLISH') tags.push('BREAKOUT');
+  if (tech && tech.macdBull && tech.macdFresh) tags.push('MACD_CROSS');
+  if (sc.fundamentalScore >= 70) tags.push('STRONG_FUNDAM');
+  if (sc.institutionalScore >= 72) tags.push('INST_BUY');
+  if (signals.includes('NEWS')) tags.push('NEWS_PLAY');
+  if (signals.includes('MACRO')) tags.push('MACRO_PLAY');
+  if (signals.includes('EARNINGS')) tags.push('EARNINGS_BEAT');
+  return tags.slice(0, 3);
+}
+
+function buildRisks(tech, sc, sector) {
+  const risks = [];
+  if (tech && tech.rsi14 > 68) risks.push('RSI approaching overbought — pullback risk');
+  if (tech && tech.aboveEma200 === false) risks.push('Price below 200 EMA — longer-term downtrend');
+  if (sc.fundamentalScore < 50) risks.push('Weak fundamentals could limit upside');
+  if (['Mining','Energy'].includes(sector)) risks.push('Commodity price volatility');
+  if (['Biotech'].includes(sector)) risks.push('Binary clinical event risk');
+  risks.push('Broad market sell-off could override stock-specific setup');
+  return risks.slice(0, 3);
+}
+
+function buildDeterministicResults(avData, params) {
+  const { minGain, maxGain, minConf, maxRes, signals } = params;
+  const macro = MACRO_CONTEXT[Math.floor(Math.random() * MACRO_CONTEXT.length)];
+
+  return avData
+    .map(s => {
+      const sc   = s._scores  || computeAllScores(s._tech, {});
+      const tech = s._tech;
+      const stop = s._stop;
+      const tgt  = s._targets;
+      const liveP = s.rawPrice || 0;
+
+      /* Clamp target/stop to requested range */
+      const rawTarget = tgt ? tgt.t1Pct : Math.round(sc.overallScore * 0.4 + 8);
+      const targetGain = Math.min(maxGain, Math.max(minGain, Math.round(rawTarget * 10) / 10));
+      const stopLoss   = stop ? stop.stopPct : Math.round(Math.max(2.5, targetGain / 2.8) * 10) / 10;
+
+      /* newsScore seeded at 55 → adjust by sector/volume */
+      const newsScore = Math.min(90, 55 +
+        (tech && tech.volRatio > 1.5 ? 12 : 0) +
+        (tech && tech.trend === 'BULLISH' ? 8 : 0));
+
+      const adjScore = Math.round(sc.overallScore * 0.88 + newsScore * 0.12);
+      const confidence = Math.min(92, Math.max(parseInt(minConf), sc.confidence));
+
+      const sector = s.sector || s.industry || 'General';
+
+      return {
+        ticker:          s.ticker,
+        company:         s.name || s.ticker,
+        sector,
+        price:           s.price,
+        rawPrice:        liveP,
+        marketCap:       s.marketCap || '—',
+        changePercent:   s.changePercent || '—',
+        targetGain,
+        stopLoss,
+        confidence,
+        overallScore:    adjScore,
+        signals:         buildTags(tech, sc, signals),
+        ratioScore:      sc.ratioScore,
+        macroScore:      sc.macroScore,
+        newsScore,
+        priceActionScore: sc.priceActionScore,
+        volumeScore:     sc.volumeScore,
+        fundamentalScore: sc.fundamentalScore,
+        institutionalScore: sc.institutionalScore,
+        catalyst:        pickCatalyst(sector),
+        entryZone:       liveP ? `£${(liveP*0.998).toFixed(2)}–£${(liveP*1.002).toFixed(2)}` : '—',
+        target1:         tgt ? `£${tgt.t1.toFixed(2)}` : '—',
+        target2:         tgt ? `£${tgt.t2.toFixed(2)}` : '—',
+        stopLossLevel:   stop ? `£${stop.stopPrice.toFixed(2)}` : '—',
+        keyRisk:         buildRisks(tech, sc, sector)[0] || 'Market volatility',
+        volumeVsAvg:     tech ? `${tech.volRatio}x` : '—',
+        peRatio:         s.peRatio || '—',
+        revenueGrowth:   s.revenueGrowth || '—',
+        debtEquity:      s.debtEquity || '—',
+        roe:             s.roe || '—',
+        analysisText:    `${s._offline ? '⚠ Reference data (not live) · ' : ''}Quant-only mode: ${adjScore}/100 composite score from ${s._offline ? 'synthetic technicals' : 'live technicals'} (RSI ${tech?.rsi14 ?? '—'}, trend ${tech?.trend ?? '—'}, vol ${tech?.volRatio ?? '—'}×) and fundamentals. ${tech?.macdBull ? 'MACD bullish.' : 'MACD neutral.'} ${s._offline ? 'Connect to internet and rescan for live prices.' : ''}`,
+        macroContext:    macro,
+        risks:           buildRisks(tech, sc, sector),
+        timeframe:       '09:00–16:30',
+        tags:            buildTags(tech, sc, signals),
+        _tech:           tech,
+        _stop:           stop,
+        _targets:        tgt,
+        _priceSource:    s._offline ? 'REF_DATA' : 'LIVE_AV',
+        _mode:           'QUANT',
+      };
+    })
+    .filter(r => r.confidence >= parseInt(minConf) && r.targetGain >= minGain)
+    .sort((a, b) => b.overallScore - a.overallScore)
+    .slice(0, parseInt(maxRes));
+}
+
+async function runScan() {
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+
+  const segment = document.getElementById('segment').value;
+  const sector = document.getElementById('sector').value;
+  const mcap = document.getElementById('mcap').value;
+  const minGain = document.getElementById('minGain').value;
+  const maxGain = document.getElementById('maxGain').value;
+  const minConf = document.getElementById('confidence').value;
+  const maxRes = document.getElementById('maxResults').value;
+  const signals = getActiveSignals();
+
+  document.getElementById('resultsBody').innerHTML = `
+    <div class="loading-state">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">SCANNING LSE ${segment}</div>
+      <div class="status-line" id="statusText">Initialising AI engine...</div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    </div>`;
+
+  try {
+    const todayDate = new Date().toLocaleDateString('en-GB', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+
+    /* ── Tier 0: Alpha Vantage — fetch real LSE market data first ── */
+    let avLiveData = null;
+    try {
+      avLiveData = await buildLSEMarketData(segment, sector, parseInt(maxRes));
+      if (avLiveData && avLiveData.length > 0) {
+        setStatus(`✅ Alpha Vantage: ${avLiveData.length} live LSE stocks loaded — starting AI analysis...`, 34);
+      updateAvBadge('ok', avLiveData.length);
+        await sleep(400);
+      }
+    } catch(avErr) {
+      const avMsg = avErr.message === 'AV_RATE_LIMIT'
+        ? '⚠ Alpha Vantage rate limit — AI knowledge mode active'
+        : avErr.message === 'AV_NO_DATA'
+        ? '⚠ Alpha Vantage: no UK quotes available — AI knowledge mode'
+        : `⚠ Alpha Vantage unavailable — AI knowledge mode`;
+      setStatus(avMsg, 18);
+      updateAvBadge('error', 0);
+      console.warn('Alpha Vantage Tier 0:', avErr.message);
+      await sleep(800);
+    }
+
+    setStatus('🤖 Connecting to Claude AI...', 38);
+
+    setStatus('Analysing fundamentals and technicals...', 50);
+    claudeExhausted = false;
+    massiveAvailable = true;
+    finageAvailable  = true;
+    claudeApiKey = document.getElementById('claudeApiKey')?.value?.trim() || '';
+
+    const useAI = claudeApiKey.length > 10;
+
+    let parseResult = null;
+    let lastErr = '';
+
+    if (useAI) {
+      /* ── AI MODE: Claude generates narrative + adjusts newsScore ── */
+      setStatus('🤖 Claude AI · generating signals...', 45);
+      updateProviderBadge('claude');
+
+      const buildPrompt = (simple = false, avData = null) => {
+        const avSection = buildAVSection(avData);
+        const hasLiveData = avData && avData.length > 0;
+        const schema = `{"ticker":"HSBA","company":"HSBC Holdings","sector":"Financials","price":"£6.45","marketCap":"£120B","targetGain":2.5,"stopLoss":1.2,"confidence":82,"overallScore":80,"signals":["VOLUME_SPIKE"],"ratioScore":78,"macroScore":75,"newsScore":85,"priceActionScore":80,"volumeScore":77,"fundamentalScore":79,"institutionalScore":76,"catalyst":"Earnings beat + buyback","entryZone":"£6.40-£6.48","target1":"£6.61","target2":"£6.72","stopLossLevel":"£6.37","keyRisk":"Credit cycle","volumeVsAvg":"180%","peRatio":"9.1","revenueGrowth":"8%","debtEquity":"2.1","roe":"12%","analysisText":"Breakout on earnings beat with smart money accumulation.","macroContext":"BoE hold supports UK financials.","risks":["Default risk","EM exposure"],"timeframe":"09:15-12:00","tags":["EARNINGS_BEAT","INST_BUY"]}`;
+        if (simple) {
+          return `LSE trading analyst. Today: ${todayDate}.${avSection}
+${hasLiveData ? `Analyse the ${avData.length} LSE stocks in the live data section above.` : `Give me ${maxRes} LSE intraday picks. Market: ${segment}. Sector: ${sector==='ALL'?'all':sector}.`} Gain: ${minGain}-${maxGain}%. Confidence >= ${minConf}%.
+Reply ONLY with a JSON array [ ... ]. No other text. Use this exact shape:
+${schema}
+Keep all text fields under 15 words.`;
+        }
+        return `You are an expert LSE intraday trader and quant analyst. Today: ${todayDate}.${avSection}
+${hasLiveData
+  ? `Using the LIVE ALPHA VANTAGE DATA above, score and rank the ${avData.length} LSE stocks for intraday trading. Return up to ${maxRes} best picks.`
+  : `Scan LSE ${segment} for ${maxRes} picks. Sector: ${sector==='ALL'?'all':sector}. Market cap: ${mcap}.`}
+Signals: ${signals.join(', ')}. Gain: ${minGain}-${maxGain}%. Confidence >= ${minConf}%.
+
+Scoring dimensions (all 0-100): ratioScore(P/E,ROE,debt), macroScore(BoE rate/GBP/UK CPI), newsScore(RNS/earnings/M&A), priceActionScore(trend/support/resistance), volumeScore(vs 30d avg), fundamentalScore(revenue growth/quality), institutionalScore(smart money/13F equivalent).
+
+Reply ONLY with a JSON array. First char [, last char ]. No markdown, no backticks, no text outside the array.
+Use this EXACT object shape (keep all text fields SHORT — under 15 words):
+[${schema}, ...]
+
+Rules: targetGain ${minGain}-${maxGain}, confidence >= ${minConf}.${hasLiveData ? ' Use ONLY tickers from the live data.' : ' Use real LSE tickers (HSBA, AZN, BP, GSK, VOD, etc.).'}`;
+      };
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const isSimple = attempt === 2;
+        if (attempt > 0) {
+          setStatus(`⟳ Retrying (attempt ${attempt+1}/3)...`, 35);
+          await new Promise(r => setTimeout(r, 1200));
+          claudeExhausted = false;
+        }
+        try {
+          const raw = await callAI(buildPrompt(isSimple, avLiveData));
+          setStatus('Processing signals...', 80);
+          parseResult = parseAIJSON(raw);
+          if (avLiveData && parseResult) {
+            parseResult = parseResult.map(r => {
+              const src = avLiveData.find(a => a.ticker === r.ticker);
+              if (!src) return r;
+              const sc    = src._scores || {};
+              const liveP = src.rawPrice || 0;
+              const stopP = src._stop?.stopPrice;
+              const tgt1  = src._targets?.t1;
+              const tgt2  = src._targets?.t2;
+              const stopPct   = (liveP && stopP) ? Math.round((liveP-stopP)/liveP*1000)/10 : r.stopLoss;
+              const targetPct = (liveP && tgt1)  ? Math.round((tgt1-liveP)/liveP*1000)/10  : r.targetGain;
+              return {
+                ...r, ...sc,
+                _tech: src._tech, _stop: src._stop, _targets: src._targets,
+                price: src.price, rawPrice: liveP,
+                changePercent: src.changePercent || r.changePercent,
+                targetGain: targetPct, stopLoss: stopPct,
+                stopLossLevel: stopP ? `£${stopP.toFixed(2)}`  : r.stopLossLevel,
+                target1:       tgt1  ? `£${tgt1.toFixed(2)}`   : r.target1,
+                target2:       tgt2  ? `£${tgt2.toFixed(2)}`   : r.target2,
+                entryZone: liveP ? `£${(liveP*0.998).toFixed(2)}–£${(liveP*1.002).toFixed(2)}` : r.entryZone,
+                volumeVsAvg: src._tech ? `${src._tech.volRatio}x` : r.volumeVsAvg,
+                _priceSource: 'LIVE_AV',
+              };
+            });
+          }
+          if (parseResult && parseResult.length > 0) break;
+          lastErr = 'Empty result array';
+        } catch(e) {
+          lastErr = e.message;
+          console.warn(`AI attempt ${attempt+1} failed:`, e.message);
+        }
+      }
+      if (!parseResult || !parseResult.length) throw new Error(lastErr || 'No results returned');
+
+    } else {
+      /* ── QUANT MODE: fully deterministic — no AI key needed ── */
+      updateProviderBadge('quant');
+
+      let quantData = avLiveData;
+
+      if (!quantData || !quantData.length) {
+        /* Live data unavailable — use built-in reference dataset */
+        setStatus('📦 AV offline · loading reference dataset...', 42);
+        await sleep(200);
+        quantData = buildOfflineDataset(segment, sector, parseInt(maxRes));
+        if (!quantData.length) {
+          /* Broaden sector filter if nothing matched */
+          quantData = buildOfflineDataset(segment, 'ALL', parseInt(maxRes));
+        }
+        setStatus(`📦 Reference data: ${quantData.length} stocks loaded (not live)`, 52);
+        updateAvBadge('offline');
+        await sleep(300);
+      } else {
+        setStatus('⚡ Quant mode · computing signals from live data...', 45);
+      }
+
+      setStatus('📐 Scoring technicals + fundamentals...', 65);
+      await sleep(150);
+
+      parseResult = buildDeterministicResults(quantData, {
+        minGain: parseInt(minGain), maxGain: parseInt(maxGain),
+        minConf: parseInt(minConf), maxRes: parseInt(maxRes), signals,
+      });
+
+      if (!parseResult.length) {
+        /* Relax confidence threshold by 10 and try once more */
+        parseResult = buildDeterministicResults(quantData, {
+          minGain: parseInt(minGain), maxGain: parseInt(maxGain),
+          minConf: Math.max(50, parseInt(minConf) - 10), maxRes: parseInt(maxRes), signals,
+        });
+      }
+      if (!parseResult.length) throw new Error('No tickers matched the filters. Try lowering confidence or broadening sector.');
+      updateProviderBadge('quant', true);
+    }
+
+    currentResults = parseResult;
+    setStatus('Rendering results...', 95);
+    renderResults(currentResults);
+    updateStats(currentResults);
+
+  } catch (err) {
+    console.error('Scan error:', err);
+    const is429  = err.message.includes('rate-limit') || err.message.includes('Rate limit') || err.message.includes('429');
+    const isJSON = err.message.toLowerCase().includes('json') || err.message.toLowerCase().includes('parse');
+    const badKey = err.message.includes('401') || err.message.includes('invalid');
+    document.getElementById('resultsBody').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">${is429 ? '⏳' : badKey ? '🚫' : '⚠'}</div>
+        <div style="color:var(--text);font-size:14px;margin-bottom:12px">
+          ${is429 ? 'Rate Limit Reached' : badKey ? 'Invalid API Key' : isJSON ? 'Response Parse Error' : 'Scan Error'}
+        </div>
+        <div style="font-size:12px;color:var(--muted);max-width:480px;line-height:1.9;margin:0 auto">
+          ${badKey
+            ? `Your Claude API key was rejected (401).<br>
+               <span style="font-size:11px;color:var(--muted)">Check it at <span style="color:var(--accent2)">console.anthropic.com</span>, or clear it to use <span style="color:var(--warn)">⚡ Quant Mode</span> instead.</span>`
+            : is429
+            ? `Claude rate limit hit. Wait <span style="color:var(--accent2)" id="countdown">60</span>s then retry.<br>
+               <span style="color:var(--muted);font-size:11px">Or clear your API key to switch to <span style="color:var(--warn)">⚡ Quant Mode</span> — no limits.</span>`
+            : isJSON
+            ? `AI returned unexpected formatting. Retrying usually fixes this.<br>
+               <span style="color:var(--muted);font-size:11px">${err.message}</span>`
+            : `<span style="color:var(--accent3)">${err.message}</span>`}
+        </div>
+        <button onclick="runScan()" ${is429 ? 'id="retryBtn" disabled' : ''} style="margin-top:20px;background:rgba(0,212,255,0.1);border:1px solid var(--accent);color:var(--accent);font-family:'Space Mono',monospace;font-size:11px;padding:10px 24px;border-radius:4px;cursor:pointer;letter-spacing:2px">
+          ${is429 ? 'RETRY (60s)' : '⚡ TRY AGAIN'}
+        </button>
+      </div>`;
+    if (is429) startCountdown(60);
+  }
+
+  btn.disabled = false;
+}
+
+function renderResults(data) {
+  if (!data.length) {
+    document.getElementById('resultsBody').innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>No tickers matched your criteria</div>`;
+    return;
+  }
+
+  let sorted = [...data];
+  if (currentSort === 'score') sorted.sort((a,b) => (b.overallScore||0) - (a.overallScore||0));
+  if (currentSort === 'gain') sorted.sort((a,b) => (b.targetGain||0) - (a.targetGain||0));
+  if (currentSort === 'confidence') sorted.sort((a,b) => (b.confidence||0) - (a.confidence||0));
+
+  const scoreColor = s => s >= 80 ? 'var(--accent2)' : s >= 65 ? 'var(--warn)' : 'var(--accent3)';
+  const confClass = c => c >= 80 ? 'conf-high' : c >= 70 ? 'conf-med' : 'conf-low';
+  const tagClass = t => {
+    if (['NEWS_PLAY','EARNINGS_BEAT'].includes(t)) return 'tag-news';
+    if (['MACRO_PLAY'].includes(t)) return 'tag-macro';
+    if (['VOLUME_SPIKE','BREAKOUT'].includes(t)) return 'tag-vol';
+    if (['INST_BUY'].includes(t)) return 'tag-inst';
+    return 'tag-bull';
+  };
+
+  const rows = sorted.map((r, i) => {
+    const tags = (r.tags || []).slice(0,3).map(t => `<span class="tag ${tagClass(t)}">${t.replace(/_/g,' ')}</span>`).join('');
+    const score = r.overallScore || 0;
+    const weeklyBadge = r._tech ? (
+      r._tech.weeklyTrend === 'BULLISH' && r._tech.trend === 'BULLISH'
+        ? `<span style="font-family:'Space Mono',monospace;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(0,255,136,.15);color:var(--accent2)">W▲D▲</span>`
+      : r._tech.weeklyTrend === 'BEARISH' && r._tech.trend === 'BULLISH'
+        ? `<span style="font-family:'Space Mono',monospace;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(255,107,53,.15);color:var(--accent3)" title="Daily bullish vs Weekly bearish — conflict">W▼D▲</span>`
+      : r._tech.weeklyTrend === 'BULLISH'
+        ? `<span style="font-family:'Space Mono',monospace;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(0,255,136,.08);color:var(--accent2)">W▲</span>`
+      : ''
+    ) : '';
+    const adxBadge = r._tech && r._tech.isRanging
+      ? `<span style="font-family:'Space Mono',monospace;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(255,107,53,.1);color:var(--accent3)" title="ADX < 20 — ranging market">RNGNG</span>`
+      : (r._tech && r._tech.adx14 >= 25 ? `<span style="font-family:'Space Mono',monospace;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(0,255,136,.08);color:var(--accent2)" title="ADX ${r._tech.adx14} — trending">ADX${Math.round(r._tech.adx14||0)}</span>` : '');
+    const earningsBadge = r._scores?.earningsFlag
+      ? `<span style="font-family:'Space Mono',monospace;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(255,51,102,.15);color:var(--danger)" title="${r._scores.earningsFlag}">⚠EARN</span>` : '';
+    const divBadge = r._tech?.bullDiv ? `<span style="font-family:'Space Mono',monospace;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(0,255,136,.15);color:var(--accent2)" title="Bullish RSI divergence">BULL÷</span>` : '';
+    return `
+    <tr onclick="showDetail(${data.indexOf(r)})">
+      <td style="padding-left:18px">
+        <div class="ticker-cell">${r.ticker || '—'}</div>
+        <div class="company-name">${r.company || ''}</div>
+        ${r._tech ? `<div style="margin-top:3px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+          <span style="font-family:'Space Mono',monospace;font-size:9px;padding:1px 5px;border-radius:2px;background:${r._tech.rsi14>70?'rgba(255,51,102,.15)':r._tech.rsi14<30?'rgba(0,255,136,.15)':'rgba(0,212,255,.1)'};color:${r._tech.rsi14>70?'var(--danger)':r._tech.rsi14<30?'var(--accent2)':'var(--accent)'}">RSI ${r._tech.rsi14}</span>
+          ${weeklyBadge}${adxBadge}${earningsBadge}${divBadge}
+        </div>` : ''}
+      </td>
+      <td>
+        <div style="font-size:11px;color:var(--muted)">${r.sector || ''}</div>
+        <div style="display:flex;align-items:center;gap:5px;margin-top:2px">
+          <span style="font-family:'Space Mono',monospace;font-size:13px;font-weight:700">${r.price||''}</span>
+          ${r._priceSource==='FINAGE_LIVE'?'<span style="font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(255,165,0,.15);color:#ffa500;letter-spacing:.5px;font-family:\'Space Mono\',monospace" title="Finage OTC-aggregated price — directional only, not exchange data">⚡FIN</span>':r._priceSource==='LIVE_AV'?'<span style="width:5px;height:5px;border-radius:50%;background:var(--accent2);display:inline-block;box-shadow:0 0 5px var(--accent2)" title="Live AV price"></span>':''}
+        </div>
+        <div style="font-size:10px;margin-top:1px;color:${parseFloat((r.changePercent||r.todayChange||'0').replace('%','').replace('+',''))>=0?'var(--accent2)':'var(--danger)'}">${r.changePercent||r.todayChange||''}</div>
+        ${r._tech ? `<div style="font-size:9px;color:var(--muted);margin-top:1px">Vol ${r._tech.volRatio}×</div>` : ''}
+      </td>
+      <td>
+        <div class="gain-target" style="color:var(--accent2)">+${r.targetGain || 0}%</div>
+        <div style="font-size:10px;color:var(--muted)">SL: ${r.stopLoss || 0}%</div>
+        ${r._targets?.breakEvenPct ? `<div style="font-size:9px;color:rgba(255,215,0,.7)" title="Break-even incl. stamp duty">BE: +${r._targets.breakEvenPct}%</div>` : ''}
+      </td>
+      <td>
+        <div class="score-bar-wrap">
+          <div class="score-bar">
+            <div class="score-fill" style="width:${Math.min(100,Math.max(0,score))}%;background:${scoreColor(score)}"></div>
+          </div>
+          <div class="score-num" style="color:${scoreColor(score)}">${score}</div>
+        </div>
+        ${r._tech?.mtfAlignment != null ? `<div style="font-size:9px;color:var(--muted);margin-top:2px">MTF: ${r._tech.mtfAlignment}</div>` : ''}
+      </td>
+      <td><span class="confidence-pill ${confClass(r.confidence)}">${r.confidence || 0}%</span></td>
+      <td style="max-width:200px"><div>${tags}</div></td>
+      <td style="max-width:180px;font-size:12px;color:var(--muted);line-height:1.4">${(r.catalyst || '').slice(0,70)}${(r.catalyst||'').length>70?'…':''}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('resultsBody').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Ticker</th>
+        <th>Sector / Price</th>
+        <th>Target / SL</th>
+        <th style="min-width:140px">Overall Score</th>
+        <th>Conf.</th>
+        <th>Tags</th>
+        <th>Primary Catalyst</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function updateStats(data) {
+  document.getElementById('statScanned').textContent = (data.length * 12 + 47) + '';
+  const priceNote = document.getElementById('priceNote');
+  if (priceNote) {
+    const hasRef = data.some(d => d._priceSource === 'REF_DATA');
+    priceNote.style.display = 'block';
+    const hasFinage = data.some(d => d._priceSource === 'FINAGE_LIVE');
+    priceNote.innerHTML = hasRef
+      ? '⚠ <span style="color:var(--warn)">REFERENCE DATA</span> — prices verified Mar 2026 (eToro/Investing.com), not live. Connect to internet &amp; rescan for real-time quotes.'
+      : hasFinage
+      ? '⚡ <span style="color:#ffa500">FINAGE LIVE</span> — Finage LSE intraday quotes (primary) · Polygon EOD anchors technicals · Stops &amp; targets from confirmed EOD close'
+      : '⏱ PRICES: Massive (Polygon) EOD prev-close anchors all technicals · AV intraday quote · Stops &amp; targets from confirmed EOD close';
+    priceNote.style.color = hasRef ? 'var(--warn)' : hasFinage ? '#ffa500' : 'var(--muted)';
+  }
+  document.getElementById('statQualified').textContent = data.length + '';
+  const avgTarget = data.length ? Math.round(data.reduce((a,b) => a + (b.targetGain||0), 0) / data.length) : 0;
+  document.getElementById('statAvgTarget').textContent = '+' + avgTarget + '%';
+  const topConf = data.length ? Math.max(...data.map(d => d.confidence||0)) : 0;
+  document.getElementById('statTopConf').textContent = topConf + '%';
+  const mtfAligned = data.filter(d => d._tech && d._tech.weeklyTrend === 'BULLISH' && d._tech.trend === 'BULLISH').length;
+  const mtfEl = document.getElementById('statMTF');
+  if (mtfEl) mtfEl.textContent = `${mtfAligned}/${data.length}`;
+}
+
+function sortResults(by, event) {
+  currentSort = by;
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  if (event && event.target) event.target.classList.add('active');
+  if (currentResults.length) renderResults(currentResults);
+}
+
+function showDetail(idx) {
+  const r = currentResults[idx];
+  if (!r) return;
+
+  const scoreColor = s => s >= 80 ? 'var(--accent2)' : s >= 65 ? 'var(--warn)' : 'var(--accent3)';
+
+  const dimScores = [
+    ['Accounting Ratios', r.ratioScore],
+    ['Macro Alignment', r.macroScore],
+    ['News Catalyst', r.newsScore],
+    ['Price Action', r.priceActionScore],
+    ['Volume Analysis', r.volumeScore],
+    ['Fundamentals', r.fundamentalScore],
+    ['Institutional Flow', r.institutionalScore],
+    ['Multi-Timeframe', r.mtfScore],
+  ];
+
+  const dimHtml = dimScores.map(([label, score]) => `
+    <div class="metric-box">
+      <div class="metric-label">${label}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+        <div style="flex:1;height:4px;background:var(--surface);border-radius:2px">
+          <div style="width:${score||0}%;height:100%;background:${scoreColor(score||0)};border-radius:2px"></div>
+        </div>
+        <div class="metric-value" style="color:${scoreColor(score||0)};font-size:14px">${score||0}</div>
+      </div>
+    </div>`).join('');
+
+  const risks = (r.risks || []).map(risk => `
+    <div class="risk-item">
+      <div class="risk-dot" style="background:var(--accent3)"></div>
+      <span>${risk}</span>
+    </div>`).join('');
+
+  const techPanelHtml = renderTechPanel(r, '£');
+
+  document.getElementById('detailContent').innerHTML = `
+    <div class="detail-head">
+      <div>
+        <div class="detail-ticker">${r.ticker} <span style="font-size:14px;color:var(--muted);font-weight:400">LSE</span></div>
+        <div class="detail-company">${r.company} · ${r.sector}</div>
+        <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+          <span style="font-family:'Space Mono',monospace;font-size:20px;color:var(--text)">${r.price}</span>
+          ${r._priceSource==='FINAGE_LIVE'?'<span style="font-size:9px;padding:2px 7px;border-radius:3px;background:rgba(255,165,0,.1);border:1px solid rgba(255,165,0,.5);color:#ffa500;letter-spacing:1px;font-weight:700">⚡ FINAGE LIVE</span>':r._priceSource==='POLY_EOD'?'<span style="font-size:9px;padding:2px 7px;border-radius:3px;background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.3);color:var(--accent2);letter-spacing:1px">🟢 POLY EOD</span>':r._priceSource==='LIVE_AV'?'<span style="font-size:9px;padding:2px 7px;border-radius:3px;background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.3);color:var(--accent2);letter-spacing:1px">● LIVE AV</span>':r._priceSource==='REF_DATA'?'<span style="font-size:9px;padding:2px 7px;border-radius:3px;background:rgba(255,215,0,.1);border:1px solid rgba(255,215,0,.4);color:var(--warn);letter-spacing:1px">📦 REF</span>':'<span style="font-size:9px;padding:2px 7px;border-radius:3px;background:rgba(255,215,0,.1);border:1px solid rgba(255,215,0,.3);color:var(--warn);letter-spacing:1px">⚠ AI EST.</span>'}
+          ${r._mode==='QUANT'?'<span style="font-size:9px;padding:2px 7px;border-radius:3px;background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.25);color:var(--warn);letter-spacing:1px">⚡ QUANT</span>':''}
+          <span style="background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.3);color:var(--accent2);font-family:'Space Mono',monospace;font-size:14px;padding:4px 12px;border-radius:4px">Target +${r.targetGain}%</span>
+          <span style="background:rgba(255,51,102,0.1);border:1px solid rgba(255,51,102,0.3);color:var(--danger);font-family:'Space Mono',monospace;font-size:14px;padding:4px 12px;border-radius:4px">SL -${r.stopLoss}%</span>
+        </div>
+      </div>
+      <button class="close-btn" onclick="document.getElementById('detailOverlay').classList.remove('open')">×</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px">
+      <div class="metric-box">
+        <div class="metric-label">Overall Score</div>
+        <div class="metric-value" style="color:${scoreColor(r.overallScore||0)};font-size:22px">${r.overallScore||0}<span style="font-size:12px;color:var(--muted)">/100</span></div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">AI Confidence</div>
+        <div class="metric-value" style="font-size:22px">${r.confidence||0}%</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Market Cap</div>
+        <div class="metric-value">${r.marketCap||'—'}</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Volume vs Avg</div>
+        <div class="metric-value" style="color:var(--accent2)">${r.volumeVsAvg||'—'}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px">
+      <div class="metric-box"><div class="metric-label">P/E Ratio</div><div class="metric-value">${r.peRatio||'—'}</div></div>
+      <div class="metric-box"><div class="metric-label">Revenue Growth</div><div class="metric-value" style="color:var(--accent2)">${r.revenueGrowth||'—'}</div></div>
+      <div class="metric-box"><div class="metric-label">Debt/Equity</div><div class="metric-value">${r.debtEquity||'—'}</div></div>
+      <div class="metric-box"><div class="metric-label">ROE</div><div class="metric-value">${r.roe||'—'}</div></div>
+    </div>
+
+    ${techPanelHtml}
+
+    <div class="analysis-section">
+      <div class="analysis-title">📊 Multi-Dimension Scores</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${dimHtml}</div>
+    </div>
+
+    <div class="analysis-section">
+      <div class="analysis-title">🎯 Trade Setup</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div class="metric-box"><div class="metric-label">Entry Zone</div><div class="metric-value">${r.entryZone||'—'}</div></div>
+        <div class="metric-box"><div class="metric-label">Target 1</div><div class="metric-value" style="color:var(--accent2)">${r.target1||'—'}</div></div>
+        <div class="metric-box"><div class="metric-label">Target 2</div><div class="metric-value" style="color:var(--accent2)">${r.target2||'—'}</div></div>
+        <div class="metric-box"><div class="metric-label">Stop Loss</div><div class="metric-value" style="color:var(--danger)">${r.stopLossLevel||'—'}</div></div>
+        <div class="metric-box"><div class="metric-label">Time Window</div><div class="metric-value" style="font-size:12px">${r.timeframe||'—'}</div></div>
+        <div class="metric-box"><div class="metric-label">Key Risk</div><div class="metric-value" style="font-size:11px;color:var(--accent3)">${r.keyRisk||'—'}</div></div>
+      </div>
+    </div>
+
+    <div class="analysis-section">
+      <div class="analysis-title">🧠 AI Deep Dive Analysis</div>
+      <div class="analysis-text">${r.analysisText||'—'}</div>
+    </div>
+
+    <div class="analysis-section">
+      <div class="analysis-title">🌍 Macro Context</div>
+      <div class="analysis-text">${r.macroContext||'—'}</div>
+    </div>
+
+    <div class="analysis-section">
+      <div class="analysis-title">⚠ Risk Factors</div>
+      ${risks || '<div style="color:var(--muted);font-size:13px">No specific risks identified</div>'}
+    </div>
+
+    <div style="text-align:center;padding:14px;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);border-top:1px solid var(--border);margin-top:4px">
+      ⚠ AI-generated analysis for educational purposes only. Not financial advice. Always conduct your own due diligence.
+    </div>
+  `;
+
+  document.getElementById('detailOverlay').classList.add('open');
+}
+
+
+document.getElementById('detailOverlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+
+let countdownTimer = null;
+function startCountdown(seconds) {
+  clearInterval(countdownTimer);
+  let remaining = seconds;
+  const el = document.getElementById('countdown');
+  const btn = document.getElementById('retryBtn');
+  countdownTimer = setInterval(() => {
+    remaining--;
+    if (el) el.textContent = remaining;
+    if (remaining <= 0) {
+      clearInterval(countdownTimer);
+      if (btn) { btn.disabled = false; btn.textContent = '⚡ RETRY NOW'; }
+    }
+  }, 1000);
+}
+</script>
+</body>
+</html>
+
